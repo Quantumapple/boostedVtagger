@@ -51,11 +51,6 @@ def get_pid_mask(
         mask = mask | (gen_pdgids == pdgid)
     return ak.all(mask, axis=ax) if byall else mask
 
-
-def to_label(array: ak.Array) -> ak.Array:
-    return ak.values_astype(array, np.int32)
-
-
 def _match_boson(
     genparts: GenParticleArray,
     fatjet: FatJetArray,
@@ -83,18 +78,13 @@ def _match_boson(
             * genparts.hasFlags(GEN_FLAGS)
         ]
 
+    # Find the closest boson to the fat jet.
     matched_vs = vs[ak.argmin(fatjet.delta_r(vs), axis=1, keepdims=True)]
 
-    # Cache delta_r for matched_vs
-    dr_matched_vs = fatjet.delta_r(matched_vs)
-    matched_vs_mask = ak.any(dr_matched_vs < JET_DR, axis=1)
-
+    # Get the decay products of the matched boson
     daughters = ak.flatten(matched_vs.distinctChildren, axis=2)
     daughters = daughters[daughters.hasFlags(["fromHardProcess", "isLastCopy"])]
     daughters_pdgId = abs(daughters.pdgId)
-
-    # Cache delta_r for daughters — used multiple times
-    dr_daughters = fatjet.delta_r(daughters)
 
     # Hadronic decay: exactly 2 quarks (excluding b quarks)
     is_2q = ak.sum(daughters_pdgId < b_PDGID, axis=1) == 2
@@ -111,20 +101,19 @@ def _match_boson(
     # Cache delta_r for daughters_nov
     dr_daughters_nov = fatjet.delta_r(daughters_nov)
     nprongs = ak.sum(dr_daughters_nov < JET_DR, axis=1)
+    both_quarks_in_cone = (nprongs == 2)
 
     # c quarks — reuse already-masked pdgId array
     cquarks = daughters_nov[daughters_nov_pdgId == c_PDGID]
     ncquarks = ak.sum(fatjet.delta_r(cquarks) < JET_DR, axis=1)
 
-    # Reuse cached dr_daughters instead of recomputing
-    matched_vdaus_mask = ak.any(dr_daughters < JET_DR, axis=1)
-    matched_mask = matched_vs_mask & matched_vdaus_mask
+    # Final matching: hadronic decay + both quarks captured in jet
+    matched_mask = both_quarks_in_cone & is_2q
 
     p = f"fj_is{label}"
     genVars = {
-        f"{p}": np.ones(len(genparts), dtype="bool"),
         f"{p}_Matched": matched_mask,
-        f"{p}_2q": to_label(is_2q),
+        f"{p}_2q": is_2q,
         f"fj_{label}_nprongs": nprongs,
         f"fj_{label}_ncquarks": ncquarks,
     }
@@ -160,7 +149,6 @@ def match_QCD(
     matched_mask = ak.any(fatjets.delta_r(partons) < JET_DR, axis=1)
 
     genVars = {
-        "fj_isQCD": np.ones(len(genparts), dtype="bool"),
         "fj_isQCD_Matched": matched_mask,
         "fj_isQCDb": (fatjets.nBHadrons == 1),
         "fj_isQCDbb": (fatjets.nBHadrons > 1),
@@ -168,8 +156,6 @@ def match_QCD(
         "fj_isQCDcc": (fatjets.nCHadrons > 1) * (fatjets.nBHadrons == 0),
         "fj_isQCDothers": (fatjets.nBHadrons == 0) & (fatjets.nCHadrons == 0),
     }
-
-    genVars = {key: to_label(var) for key, var in genVars.items()}
 
     return genVars, matched_mask
 

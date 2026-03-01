@@ -1,13 +1,23 @@
 import awkward as ak
 import numpy as np
+import pandas as pd
+
+import time
+
 from coffea.processor import ProcessorABC
 from coffea.nanoevents.methods import candidate
-
+from coffea.analysis_tools import PackedSelection
 from .tagger_gen_matching import match_Wplus, match_Wminus, match_Z, match_QCD
+
+### Warning ignorance
+import warnings
+warnings.filterwarnings("ignore", message="Missing cross-reference index ")
+
 
 class PreProcessor(ProcessorABC):
     """
     Produces a flat training ntuple from PFNano.
+    Targets hadronic V boson decays: W+/W-/Z -> qq
     """
 
     def __init__(self):
@@ -22,24 +32,20 @@ class PreProcessor(ProcessorABC):
         self.GenPartvars = [
             "fj_genjetmass",
             # W boson (hadronic)
-            "fj_isWplus",
             "fj_isWplus_Matched",
             "fj_isWplus_2q",
             "fj_Wplus_nprongs",
             "fj_Wplus_ncquarks",
-            "fj_isWminus",
             "fj_isWminus_Matched",
             "fj_isWminus_2q",
             "fj_Wminus_nprongs",
             "fj_Wminus_ncquarks",
             # Z boson (hadronic)
-            "fj_isZ",
             "fj_isZ_Matched",
             "fj_isZ_2q",
             "fj_Z_nprongs",
             "fj_Z_ncquarks",
             # QCD
-            "fj_isQCD",
             "fj_isQCD_Matched",
             "fj_isQCDb",
             "fj_isQCDbb",
@@ -53,7 +59,8 @@ class PreProcessor(ProcessorABC):
         return self._accumulator
 
     def process(self, events: ak.Array):
-        pass
+
+        start = time.time()
 
         dataset = events.metadata["dataset"]
 
@@ -106,7 +113,7 @@ class PreProcessor(ProcessorABC):
         #### Ak8 jets
         #### be separated from any isolated leptons or photons by ∆R > 0.8
         fatjets = events.FatJet
-        fj_selections = (fatjets.pt > 200) & (abs(fatjets.eta) < 2.5) & (fatjets.isTight)
+        fj_selections = (fatjets.pt > 200) & (abs(fatjets.eta) < 2.5) #& (fatjets.isTight)
         fatjets = fatjets[fj_selections]
         fatjets = fatjets[ak.argsort(fatjets.pt, ascending=False)]
 
@@ -115,24 +122,34 @@ class PreProcessor(ProcessorABC):
         clean_mask = ak.all(dr_table > 0.8, axis=-1)
         candidatefj = fatjets[clean_mask]
 
+        # Take only the leading fat jet (highest pT) per event
+        leadingfj = ak.firsts(candidatefj)
+
+        # =========== AK8 jet-level variables ===========
+        FatJetVars = {
+            f"fj_{var}": leadingfj[var]
+            for var in ["pt", "eta", "phi", "mass", "msoftdrop"]
+        }
+        FatJetVars["fj_numFatjets"] = ak.num(candidatefj)
+
         ###### =========== Gen-level matching ===========
         genparts = events.GenPart
         GenVars = {}
 
         if "Wto2Q" in dataset:
-            wplus_genvars, _ = match_Wplus(genparts, candidatefj)
-            wminus_genvars, _ = match_Wminus(genparts, candidatefj)
+            wplus_genvars, _ = match_Wplus(genparts, leadingfj)
+            wminus_genvars, _ = match_Wminus(genparts, leadingfj)
             GenVars = {**wplus_genvars, **wminus_genvars}
         elif "Zto2Q" in dataset:
-            z_genvars, _ = match_Z(genparts, candidatefj)
+            z_genvars, _ = match_Z(genparts, leadingfj)
             GenVars = {**z_genvars}
         elif "QCD" in dataset:
-            qcd_genvars, _ = match_QCD(genparts, candidatefj)
+            qcd_genvars, _ = match_QCD(genparts, leadingfj)
             GenVars = {**qcd_genvars}
 
         AllGenVars = {
             **GenVars,
-            **{"fj_genjetmass": candidatefj.matched_gen.mass},
+            **{"fj_genjetmass": leadingfj.matched_gen.mass},
         }
 
         # Fill missing variables with zeros if not applicable to this sample
@@ -146,3 +163,45 @@ class PreProcessor(ProcessorABC):
                 GenVars[key] = GenVars[key].to_numpy()
             except Exception:
                 continue
+
+        # =========== Combine all variables ===========
+        skimmed_vars = {**FatJetVars, **GenVars}
+
+        # =========== Event selection ===========
+        selection = PackedSelection()
+        # Require at least one good fat jet per event
+        selection.add("fjselection", ak.num(candidatefj) >= 1)
+
+        if np.sum(selection.all(*selection.names)) == 0:
+            return {}
+
+        skimmed_vars = {
+            key: np.squeeze(np.array(value[selection.all(*selection.names)]))
+            for key, value in skimmed_vars.items()
+        }
+
+        # =========== Convert and save ===========
+        for key in skimmed_vars:
+            skimmed_vars[key] = skimmed_vars[key].squeeze().tolist()
+
+        df = pd.DataFrame(skimmed_vars)
+        df = df.dropna()  # drop events with NaN genjetmass
+
+        if not df.empty:
+            pass
+            df.to_parquet('test.parquet')
+
+
+        # print(f"Processed {len(df)} events in {time.time() - start:.1f}s")
+        # print(df)
+
+        # fname = events.behavior["__events_factory__"]._partition_key.replace("/", "_")
+        # fname = "condor_" + fname
+        # self.save_dfs_parquet(df, fname)
+
+        print(f"Saved parquet in {time.time() - start:.1f}s")
+
+        return {}
+
+    def postprocess(self, accumulator):
+        pass
