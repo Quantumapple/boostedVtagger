@@ -136,25 +136,39 @@ def match_Wminus(genparts: GenParticleArray, fatjet: FatJetArray):
     return _match_boson(genparts, fatjet, boson_pdgid=W_PDGID, use_sign=True, positive=False, label="Wminus")
 
 
-def match_QCD(
-    genparts: GenParticleArray, fatjets: FatJetArray
-) -> tuple[np.array, dict[str, np.array]]:
-    """Gen matching for QCD samples, arguments as defined in `tagger_gen_matching`."""
+def match_QCD(genparts: GenParticleArray, fatjets: FatJetArray) -> tuple[np.array, dict[str, np.array]]:
+    """
+    Gen matching for QCD samples.
+
+    Instead of relying on hadronFlavour (which has Run 3 NanoAOD schema issues),
+    we count b/c partons from gen particles within the jet cone directly.
+    """
 
     partons = genparts[
         get_pid_mask(
             genparts, [g_PDGID] + list(range(1, b_PDGID + 1)), ax=1, byall=False
         )
     ]
-    matched_mask = ak.any(fatjets.delta_r(partons) < JET_DR, axis=1)
+
+    # Cache delta_r — reused for both matched_mask and parton counting
+    dr_partons = fatjets.delta_r(partons)
+    matched_mask = ak.any(dr_partons < JET_DR, axis=1)
+
+    # Get partons inside the jet cone
+    partons_in_jet = partons[dr_partons < JET_DR]
+    partons_in_jet_pdgId = abs(partons_in_jet.pdgId)
+
+    # Count b and c partons inside the jet
+    nBPartons = ak.sum(partons_in_jet_pdgId == b_PDGID, axis=1)
+    nCPartons = ak.sum(partons_in_jet_pdgId == c_PDGID, axis=1)
 
     genVars = {
         "fj_isQCD_Matched": matched_mask,
-        "fj_isQCDb": (fatjets.nBHadrons == 1),
-        "fj_isQCDbb": (fatjets.nBHadrons > 1),
-        "fj_isQCDc": (fatjets.nCHadrons == 1) * (fatjets.nBHadrons == 0),
-        "fj_isQCDcc": (fatjets.nCHadrons > 1) * (fatjets.nBHadrons == 0),
-        "fj_isQCDothers": (fatjets.nBHadrons == 0) & (fatjets.nCHadrons == 0),
+        "fj_isQCDb":      matched_mask & (nBPartons == 1),
+        "fj_isQCDbb":     matched_mask & (nBPartons > 1),
+        "fj_isQCDc":      matched_mask & (nCPartons == 1) & (nBPartons == 0),
+        "fj_isQCDcc":     matched_mask & (nCPartons > 1)  & (nBPartons == 0),
+        "fj_isQCDothers": matched_mask & (nBPartons == 0) & (nCPartons == 0),
     }
 
     return genVars, matched_mask
