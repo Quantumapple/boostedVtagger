@@ -134,6 +134,7 @@ class PreProcessor(ProcessorABC):
 
         ###### =========== Gen-level matching ===========
         genparts = events.GenPart
+        genjet_ak8 = events.GenJetAK8
         GenVars = {}
 
         if "Wto2Q" in dataset:
@@ -144,7 +145,7 @@ class PreProcessor(ProcessorABC):
             z_genvars, _ = match_Z(genparts, leadingfj)
             GenVars = {**z_genvars}
         elif "QCD" in dataset:
-            qcd_genvars, _ = match_QCD(genparts, leadingfj)
+            qcd_genvars, _ = match_QCD(genjet_ak8, leadingfj)
             GenVars = {**qcd_genvars}
 
         AllGenVars = {
@@ -188,9 +189,9 @@ class PreProcessor(ProcessorABC):
         df = df.dropna()  # drop events with NaN genjetmass
 
         if not df.empty:
-            pass
-            df.to_parquet('test.parquet')
+            df.to_parquet(f'{dataset}_test.parquet')
 
+        print(f"Saved parquet in {time.time() - start:.1f}s")
 
         # print(f"Processed {len(df)} events in {time.time() - start:.1f}s")
         # print(df)
@@ -198,8 +199,6 @@ class PreProcessor(ProcessorABC):
         # fname = events.behavior["__events_factory__"]._partition_key.replace("/", "_")
         # fname = "condor_" + fname
         # self.save_dfs_parquet(df, fname)
-
-        print(f"Saved parquet in {time.time() - start:.1f}s")
 
         return {}
 
