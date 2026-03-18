@@ -36,22 +36,24 @@ class PreProcessor(ProcessorABC):
             "fj_isWplus_2q",
             "fj_Wplus_nprongs",
             "fj_Wplus_ncquarks",
+            "fj_isWplus_ud",
+            "fj_isWplus_cs",
             "fj_isWminus_Matched",
             "fj_isWminus_2q",
             "fj_Wminus_nprongs",
             "fj_Wminus_ncquarks",
+            "fj_isWminus_ud",
+            "fj_isWminus_cs",
             # Z boson (hadronic)
             "fj_isZ_Matched",
             "fj_isZ_2q",
             "fj_Z_nprongs",
             "fj_Z_ncquarks",
+            "fj_isZ_bb",
+            "fj_isZ_cc",
+            "fj_isZ_qq",
             # QCD
             "fj_isQCD_Matched",
-            "fj_isQCDb",
-            "fj_isQCDbb",
-            "fj_isQCDc",
-            "fj_isQCDcc",
-            "fj_isQCDothers",
         ]
 
     @property
@@ -94,26 +96,52 @@ class PreProcessor(ProcessorABC):
 
         #### Hadronically decaying tau leptons must have pT > 20 GeV, |η| < 2.3, and pass the DEEP TAU algorithm identification requirements
         #### In the analysisn note, (Decay Mode != 5,6,7) and tightidDeepTau
-        #### Run 2 reference:
-        # (events.Tau.pt > 20)
-        # (abs(events.Tau.eta) < 2.3)
-        # (events.Tau.rawIso < 5)
-        # (events.Tau.idDeepTau2017v2p1VSjet) This was a bitmask
-
+        #### taus: defined but not included in jet cleaning for now
         # taus = events.Tau
-        # tau_selections = (taus.pt > 20) & (abs(taus.eta) < 2.3) & (taus.idDeepTau2018v2p5VSjet >= 6)
-        #### byDeepTau2018v2p5VSjet ID working points (deepTau2018v2p5):
-        #### 1 = VVVLoose, 2 = VVLoose, 3 = VLoose, 4 = Loose, 5 = Medium, 6 = Tight, 7 = VTight, 8 = VVTight
+        # tau_selections = (
+        #     (taus.pt > 20)
+        #     & (abs(taus.eta) < 2.3)
+        #     & (abs(taus.dz) < 0.2)
+        #     & (taus.decayMode >= 0)
+        #     & (taus.decayMode != 5)
+        #     & (taus.decayMode != 6)
+        #     & (taus.decayMode != 7)
+        #     # Run 3: updated from DeepTau2017v2p1 to DeepTau2018v2p5
+        #     & (taus.idDeepTau2018v2p5VSe >= 2)    # VVLoose
+        #     & (taus.idDeepTau2018v2p5VSmu >= 4)   # Tight
+        #     & (taus.idDeepTau2018v2p5VSjet >= 5)  # Medium
+        # )
+        # taus = taus[tau_selections]
 
-        #### Ignore taus at the moment, too many disagreement
         leptons = ak.concatenate([electrons, muons], axis=1)
         leptons = leptons[ak.argsort(leptons.pt, ascending=False)]
         candidatelep_p4 = build_p4(leptons)
 
+        def tight_jet_id(jets):
+            """
+            Manual Tight Jet ID for Run 3 NanoAOD v15+
+            (isTight no longer available as a precomputed branch)
+            Reference: https://twiki.cern.ch/twiki/bin/viewauth/CMS/JetID13p6TeV
+            """
+            abs_eta = abs(jets.eta)
+            return (
+                ak.where(abs_eta <= 2.6,
+                    (jets.neHEF < 0.99) & (jets.neEmEF < 0.9) &
+                    ((jets.chMultiplicity + jets.neMultiplicity) > 1) &
+                    (jets.chHEF > 0.01) & (jets.chMultiplicity > 0),
+                ak.where(abs_eta <= 2.7,
+                    (jets.neHEF < 0.90) & (jets.neEmEF < 0.99),
+                ak.where(abs_eta <= 3.0,
+                    (jets.neHEF < 0.99),
+                    # abs_eta > 3.0
+                    (jets.neMultiplicity >= 2) & (jets.neEmEF < 0.4)
+                )))
+            )
+
         #### Ak8 jets
         #### be separated from any isolated leptons or photons by ∆R > 0.8
         fatjets = events.FatJet
-        fj_selections = (fatjets.pt > 200) & (abs(fatjets.eta) < 2.5) #& (fatjets.isTight)
+        fj_selections = (fatjets.pt > 200) & (abs(fatjets.eta) < 2.5) & tight_jet_id(fatjets)
         fatjets = fatjets[fj_selections]
         fatjets = fatjets[ak.argsort(fatjets.pt, ascending=False)]
 
@@ -134,7 +162,6 @@ class PreProcessor(ProcessorABC):
 
         ###### =========== Gen-level matching ===========
         genparts = events.GenPart
-        genjet_ak8 = events.GenJetAK8
         GenVars = {}
 
         if "Wto2Q" in dataset:
@@ -145,7 +172,7 @@ class PreProcessor(ProcessorABC):
             z_genvars, _ = match_Z(genparts, leadingfj)
             GenVars = {**z_genvars}
         elif "QCD" in dataset:
-            qcd_genvars, _ = match_QCD(genjet_ak8, leadingfj)
+            qcd_genvars, _ = match_QCD(genparts, leadingfj)
             GenVars = {**qcd_genvars}
 
         AllGenVars = {
@@ -161,9 +188,9 @@ class PreProcessor(ProcessorABC):
 
         for key in GenVars:
             try:
-                GenVars[key] = GenVars[key].to_numpy()
-            except Exception:
-                continue
+                GenVars[key] = ak.to_numpy(GenVars[key])
+            except Exception as e:
+                raise RuntimeError(f"Failed to convert {key} to numpy: {e}")
 
         # =========== Combine all variables ===========
         skimmed_vars = {**FatJetVars, **GenVars}
