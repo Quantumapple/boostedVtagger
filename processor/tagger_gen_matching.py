@@ -6,6 +6,8 @@ from coffea.nanoevents.methods.base import NanoEventsArray
 from coffea.nanoevents.methods.nanoaod import FatJetArray, GenParticleArray
 
 d_PDGID = 1
+u_PDGID = 2
+s_PDGID = 3
 c_PDGID = 4
 b_PDGID = 5
 g_PDGID = 21
@@ -78,7 +80,7 @@ def _match_boson(
             * genparts.hasFlags(GEN_FLAGS)
         ]
 
-    # Find the closest boson to the fat jet.
+    # Find the closest boson to the fat jet
     matched_vs = vs[ak.argmin(fatjet.delta_r(vs), axis=1, keepdims=True)]
 
     # Get the decay products of the matched boson
@@ -86,10 +88,41 @@ def _match_boson(
     daughters = daughters[daughters.hasFlags(["fromHardProcess", "isLastCopy"])]
     daughters_pdgId = abs(daughters.pdgId)
 
-    # Hadronic decay: exactly 2 quarks (excluding b quarks)
-    is_2q = ak.sum(daughters_pdgId < b_PDGID, axis=1) == 2
+    # =========== Hadronic decay requirement ===========
+    if label in ["Wplus", "Wminus"]:
+        # W: exactly 2 light quarks (u, d, s, c — excluding b)
+        is_2q = ak.sum(daughters_pdgId < b_PDGID, axis=1) == 2
+    else:
+        # Z: exactly 2 quarks (u, d, s, c, b — including b for Z->bb)
+        is_2q = ak.sum(daughters_pdgId <= b_PDGID, axis=1) == 2
 
-    # Exclude neutrinos for prong counting
+    # =========== Decay mode separation ===========
+    if label in ["Wplus", "Wminus"]:
+        # W -> ud: one u quark and one d quark
+        is_ud = (
+            (ak.sum(daughters_pdgId == u_PDGID, axis=1) == 1)
+            & (ak.sum(daughters_pdgId == d_PDGID, axis=1) == 1)
+        )
+        # W -> cs: one c quark and one s quark
+        is_cs = (
+            (ak.sum(daughters_pdgId == c_PDGID, axis=1) == 1)
+            & (ak.sum(daughters_pdgId == s_PDGID, axis=1) == 1)
+        )
+    else:
+        # Z -> bb: two b quarks
+        is_bb = ak.sum(daughters_pdgId == b_PDGID, axis=1) == 2
+        # Z -> cc: two c quarks
+        is_cc = ak.sum(daughters_pdgId == c_PDGID, axis=1) == 2
+        # Z -> qq: light quarks (u, d, s) or gluon
+        is_qq = (
+            (ak.sum(daughters_pdgId == u_PDGID, axis=1) >= 1)
+            | (ak.sum(daughters_pdgId == d_PDGID, axis=1) >= 1)
+            | (ak.sum(daughters_pdgId == s_PDGID, axis=1) >= 1)
+            | (ak.sum(daughters_pdgId == g_PDGID, axis=1) >= 1)
+        )
+
+    # Neutrino mask — no-op for hadronic decays but kept as safety check
+    # against unexpected gen-level particles in the decay tree
     neutrino_mask = (
         (daughters_pdgId != vELE_PDGID)
         & (daughters_pdgId != vMU_PDGID)
@@ -98,31 +131,41 @@ def _match_boson(
     daughters_nov = daughters[neutrino_mask]
     daughters_nov_pdgId = daughters_pdgId[neutrino_mask]
 
-    # Cache delta_r for daughters_nov
+    # Prong counting — reuse for both_quarks_in_cone
     dr_daughters_nov = fatjet.delta_r(daughters_nov)
     nprongs = ak.sum(dr_daughters_nov < JET_DR, axis=1)
-    both_quarks_in_cone = (nprongs == 2)
+    both_quarks_in_cone = nprongs == 2
 
     # c quarks — reuse already-masked pdgId array
     cquarks = daughters_nov[daughters_nov_pdgId == c_PDGID]
     ncquarks = ak.sum(fatjet.delta_r(cquarks) < JET_DR, axis=1)
 
-    # Final matching: hadronic decay + both quarks captured in jet
-    matched_mask = both_quarks_in_cone & is_2q
+    # Final matching: fully merged hadronic decay
+    matched_mask = is_2q & both_quarks_in_cone
 
     p = f"fj_is{label}"
     genVars = {
         f"{p}_Matched": matched_mask,
-        f"{p}_2q": is_2q,
+        f"{p}_2q": is_2q & matched_mask,  # combined flag kept for convenience
         f"fj_{label}_nprongs": nprongs,
         f"fj_{label}_ncquarks": ncquarks,
     }
+
+    # Add decay mode specific flags
+    if label in ["Wplus", "Wminus"]:
+        genVars[f"{p}_ud"] = is_ud & matched_mask
+        genVars[f"{p}_cs"] = is_cs & matched_mask
+    else:
+        # Z boson decay modes
+        genVars[f"{p}_bb"] = is_bb & matched_mask
+        genVars[f"{p}_cc"] = is_cc & matched_mask
+        genVars[f"{p}_qq"] = is_qq & matched_mask
 
     return genVars, matched_mask
 
 
 def match_Z(genparts: GenParticleArray, fatjet: FatJetArray):
-    """Gen matching for Z boson."""
+    """Gen matching for Z boson (pdgId = 23)."""
     return _match_boson(genparts, fatjet, boson_pdgid=Z_PDGID, use_sign=False, label="Z")
 
 
@@ -136,44 +179,25 @@ def match_Wminus(genparts: GenParticleArray, fatjet: FatJetArray):
     return _match_boson(genparts, fatjet, boson_pdgid=W_PDGID, use_sign=True, positive=False, label="Wminus")
 
 
-def match_QCD(genjetak8, fatjets: FatJetArray) -> tuple[np.array, dict[str, np.array]]:
+def match_QCD(genparts: GenParticleArray, fatjet: FatJetArray) -> tuple[np.array, dict[str, np.array]]:
     """
-    Gen matching for QCD samples using GenJetAK8.
-    - Matches FatJet to GenJetAK8 by deltaR
-    - Uses partonFlavour for matched_mask
-    - Uses nBHadrons/nCHadrons for hadron flavour categorization
+    Gen matching for QCD samples.
+    A jet is considered QCD if it is not matched to any heavy object (W, Z, H, Top)
+    within JET_DR. No subcategories needed — QCD is QCD.
     """
 
-    # Match leading fat jet to closest GenJetAK8 by deltaR
-    dr_genjet = fatjets.delta_r(genjetak8)
-    matched_genjet = ak.firsts(genjetak8[ak.argmin(dr_genjet, axis=1, keepdims=True)])
+    # Check if any heavy boson is within JET_DR of the fat jet
+    heavy_objects = genparts[
+        get_pid_mask(genparts, [W_PDGID, Z_PDGID, HIGGS_PDGID, TOP_PDGID], byall=False)
+        * genparts.hasFlags(GEN_FLAGS)
+    ]
 
-    # Require matched gen jet within JET_DR
-    matched_mask = ak.fill_none(fatjets.delta_r(matched_genjet) < JET_DR, False)
-
-    # Get hadron counts from matched GenJetAK8
-    nBHadrons = ak.fill_none(matched_genjet.nBHadrons * 1, 0)
-    nCHadrons = ak.fill_none(matched_genjet.nCHadrons * 1, 0)
+    # QCD jet = no heavy object found nearby
+    dr_heavy = fatjet.delta_r(heavy_objects)
+    matched_mask = ~ak.any(dr_heavy < JET_DR, axis=1)
 
     genVars = {
         "fj_isQCD_Matched": matched_mask,
-        "fj_isQCDb":      matched_mask & (nBHadrons == 1),
-        "fj_isQCDbb":     matched_mask & (nBHadrons > 1),
-        "fj_isQCDc":      matched_mask & (nCHadrons == 1) & (nBHadrons == 0),
-        "fj_isQCDcc":     matched_mask & (nCHadrons > 1)  & (nBHadrons == 0),
-        "fj_isQCDothers": matched_mask & (nBHadrons == 0) & (nCHadrons == 0),
     }
 
     return genVars, matched_mask
-
-
-def get_genjet_vars(events: NanoEventsArray, fatjets: FatJetArray):
-    """Matched fat jet to gen-level jet and gets gen jet vars"""
-    GenJetVars = {}
-
-    # NanoAOD automatically matched ak8 fat jets
-    # No soft dropped gen jets however
-    GenJetVars["fj_genjetmass"] = fatjets.matched_gen.mass
-    matched_gen_jet_mask = np.ones(len(events), dtype="bool")
-
-    return GenJetVars, matched_gen_jet_mask
