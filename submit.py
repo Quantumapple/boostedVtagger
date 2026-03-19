@@ -1,0 +1,194 @@
+import json
+import argparse
+import subprocess
+import shutil
+from pathlib import Path
+from datetime import datetime
+
+def load_bash_template():
+
+    # Define the bash script template
+    bash_template = """#!/bin/bash
+
+# Check current directory to make sure that input files are transferred
+ls -ltrh
+echo ""
+
+echo "python run.py -s $JSON_FILE"
+python run.py -s $JSON_FILE
+"""
+
+    return bash_template
+
+
+def load_jdl_template(condor_log_dir):
+
+    ### Condor Job Flavour = Maximum wall time
+    ### espresso     = 20 minutes
+    ### microcentury = 1 hour
+    ### longlunch    = 2 hours
+    ### workday      = 8 hours
+    ### tomorrow     = 1 day
+    ### testmatch    = 3 days
+    ### nextweek     = 1 week
+
+    jdl = """universe              = vanilla
+executable            = run.sh
+should_Transfer_Files = YES
+whenToTransferOutput  = ON_EXIT
+arguments             = $(input_json)
+transfer_Input_Files  = processor, run.py $(input_json)
+output                = {0}/$(ClusterId).$(ProcId).stdout
+error                 = {0}/$(ClusterId).$(ProcId).stderr
+log                   = {0}/decoding.log
++JobFlavour           = "workday"
++SingularityImage = "/cvmfs/unpacked.cern.ch/registry.hub.docker.com/coffeateam/coffea-dask-almalinux9:2025.12.0-py3.12"
+queue input_json from job_config/*.json
+""".format(condor_log_dir)
+
+    return jdl
+
+def get_balanced_sequential_groups(files, target_size):
+    """
+    Distributes leftovers across the first few groups to maintain
+    uniformity and strict sequential order.
+    """
+    total_files = len(files)
+    if total_files == 0:
+        return []
+    if total_files <= target_size:
+        return [files]
+
+    # Calculate how many groups to create based on the target size
+    num_groups = total_files // target_size
+
+    # Use divmod to get the base size and how many groups need +1 file
+    base_size, remainder = divmod(total_files, num_groups)
+
+    groups = []
+    start = 0
+    for i in range(num_groups):
+        # The first 'remainder' groups get one extra file
+        current_size = base_size + (1 if i < remainder else 0)
+        groups.append(files[start : start + current_size])
+        start += current_size
+
+    return groups
+
+def file_split(input_json, year, size):
+
+    outdir = Path('./job_configs')
+
+    if outdir.exists():
+        print(f"Cleaning up old directory in {outdir}...")
+        shutil.rmtree(outdir)
+
+    outdir.mkdir(exist_ok=True)
+
+    with open(input_json, 'r') as file:
+        data = json.load(file)
+
+    # Use .get() to avoid KeyErrors and .items() for faster iteration
+    year_data = data.get(year, {})
+    if not year_data:
+        print(f"Warning: No data found for year {year}")
+        return []
+
+    # Iterate using .items() to avoid repeated lookups
+    for process, subprocesses in year_data.items():
+
+        if process.endswith('_LO'):
+            # This is your general condition to avoid NLO overlap
+            continue
+
+        for sub, files in subprocesses.items():
+            # The balancing logic remains the most efficient way to partition
+            groups = get_balanced_sequential_groups(files, size)
+
+            for idx, group in enumerate(groups):
+                job_key = f"{sub}_{idx}"
+
+                # Directly write the JSON to minimize memory residency of large dicts
+                output_path = outdir / f"{job_key}.json"
+
+                with open(output_path, "w") as f:
+                    json.dump({
+                        job_key: {
+                            "treename": "Events",
+                            "files": group,
+                            "metadata": {"year": int(year), "is_mc": True},
+                        }
+                    }, f, indent=4)
+
+## --------------------------------------
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description='Submit condor jobs to pre-process V-jet tagger data')
+
+    parser.add_argument(
+        '-s',
+        '--sample',
+        metavar = 'JSONFILE',
+        type = str,
+        help = 'input json file including dataset',
+        required = True,
+        dest = 'sample',
+    )
+
+    parser.add_argument(
+        '-y',
+        '--year',
+        metavar = 'YEAR',
+        help = 'year',
+        type = str,
+        default = '2024',
+        dest = 'year',
+    )
+
+    parser.add_argument(
+        '-n',
+        '--split',
+        metavar = 'NUM',
+        help = 'number of files for each job',
+        type = int,
+        default = '10',
+        dest = 'split',
+    )
+
+    parser.add_argument(
+        '--dryrun',
+        action = 'store_true',
+        help = 'If set, condor submission will not happen',
+        dest = 'dryrun',
+    )
+
+    args = parser.parse_args()
+
+    # Make output directory
+    # Format as YYYYMMDD
+    now = datetime.now()
+    formatted_date = now.strftime("%Y%m%d")
+
+    mkdir_cmd = ['eos', 'root://cmseos.fnal.gov', 'mkdir', '-p', f'/store/user/jongho/vjet_preprocess_{formatted_date}']
+    subprocess.run(mkdir_cmd)
+
+    # Condor log dir
+    log_dir = Path(f'./condor_log_{formatted_date}')
+    log_dir.mkdir(exist_ok=True)
+
+    file_split(args.sample, args.year, args.split)
+
+    bash_script = load_bash_template()
+    with open(f'run.sh','w') as bashfile:
+        bashfile.write(bash_script)
+
+    jdl_script = load_jdl_template(condor_log_dir=log_dir)
+    with open(f'condor.jdl','w') as jdlfile:
+        jdlfile.write(jdl_script)
+
+    if args.dryrun:
+        pass
+
+    else:
+        pass
+        # subprocess.run(['condor_submit', 'condor.jdl'])

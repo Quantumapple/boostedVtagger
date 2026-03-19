@@ -1,28 +1,41 @@
 import time
+import json
+import argparse
 from coffea import nanoevents, processor
 from processor.preprocessor import PreProcessor
 
-fileset = {}
-fileset['Wto2Q-2Jets_Bin-PTQQ'] = {
-    "treename": "Events",
-    "files": ['../samples/Wto2Q-2Jets_Bin-PTQQ-100_0.root'],
-    "metadata": {"year": 2024, "is_mc": True},
-}
+if __name__ == "__main__":
 
-p = PreProcessor()
+    parser = argparse.ArgumentParser(description='Run coffea processor!')
 
-# nanoevents.PFNanoAODSchema.mixins["SV"] = "PFCand"
+    parser.add_argument(
+        '-s',
+        '--sample',
+        metavar = 'JSONFILE',
+        type = str,
+        help = 'input json file including dataset',
+        required = True,
+        dest = 'sample',
+    )
 
-tic = time.time()
+    args = parser.parse_args()
 
-run = processor.Runner(
-    executor=processor.IterativeExecutor(status=True),
-    savemetrics=True,
-    schema=nanoevents.PFNanoAODSchema,
-)
+    with open(args.sample, 'r') as file:
+        fileset = json.load(file)
 
-out, metrics = run(fileset, processor_instance=p)
+    p = PreProcessor()
+    # nanoevents.PFNanoAODSchema.mixins["SV"] = "PFCand"
 
-elapsed = time.time() - tic
-print(f"Metrics: {metrics}")
-print(f"Finished in {elapsed:.1f}s")
+    tic = time.time()
+
+    run = processor.Runner(
+        executor=processor.IterativeExecutor(status=True),
+        savemetrics=True,
+        schema=nanoevents.PFNanoAODSchema,
+    )
+
+    out, metrics = run(fileset, processor_instance=p)
+
+    elapsed = time.time() - tic
+    print(f"Metrics: {metrics}")
+    print(f"Finished in {elapsed:.1f}s")
