@@ -219,5 +219,4 @@ if __name__ == "__main__":
         pass
 
     else:
-        pass
-        # subprocess.run(['condor_submit', 'condor.jdl'])
+        subprocess.run(['condor_submit', 'condor.jdl'], shell=True, check=True)
