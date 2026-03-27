@@ -21,7 +21,7 @@ python run.py -s $JSON_FILE
     return bash_template
 
 
-def load_jdl_template(condor_log_dir):
+def load_jdl_template(condor_log_dir, subdir):
 
     ### Condor Job Flavour = Maximum wall time
     ### espresso     = 20 minutes
@@ -37,14 +37,14 @@ executable            = run.sh
 should_Transfer_Files = YES
 whenToTransferOutput  = ON_EXIT
 arguments             = $(input_json)
-transfer_Input_Files  = processor, run.py $(input_json)
-output                = {0}/$(ClusterId).$(ProcId).stdout
-error                 = {0}/$(ClusterId).$(ProcId).stderr
-log                   = {0}/decoding.log
+transfer_Input_Files  = processor, run.py, $(input_json)
+output                = {0}/{1}/$(ClusterId).$(ProcId).stdout
+error                 = {0}/{1}/$(ClusterId).$(ProcId).stderr
+log                   = {0}/{1}/condor.log
 +JobFlavour           = "workday"
 +SingularityImage = "/cvmfs/unpacked.cern.ch/registry.hub.docker.com/coffeateam/coffea-dask-almalinux9:2025.12.0-py3.12"
 queue input_json from job_config/*.json
-""".format(condor_log_dir)
+""".format(condor_log_dir, subdir)
 
     return jdl
 
@@ -176,14 +176,26 @@ if __name__ == "__main__":
     log_dir = Path(f'./condor_log_{formatted_date}')
     log_dir.mkdir(exist_ok=True)
 
+    counter = 0
+    while True:
+        sub_log_dir = log_dir / f"submit_{counter}"
+        if not sub_log_dir.exists():
+            sub_log_dir.mkdir()
+            submit_subdir = f"submit_{counter}"
+            break
+        counter += 1
+
+    print(f"Job logs will be saved to: {sub_log_dir}")
+    # -------------------------------------------------------------
+
     file_split(args.sample, args.year, args.split)
 
     bash_script = load_bash_template()
     with open(f'run.sh','w') as bashfile:
         bashfile.write(bash_script)
 
-    jdl_script = load_jdl_template(condor_log_dir=log_dir)
-    with open(f'condor.jdl','w') as jdlfile:
+    jdl_script = load_jdl_template(condor_log_dir=log_dir, subdir=submit_subdir)
+    with open(f'submit.jdl','w') as jdlfile:
         jdlfile.write(jdl_script)
 
     if args.dryrun:
