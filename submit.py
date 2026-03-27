@@ -10,6 +10,8 @@ def load_bash_template(outdir):
     # Define the bash script template
     bash_template = """#!/bin/bash
 
+JSON_FILE=$(basename "$1")
+
 # Extract the filename and swap .json for .parquet
 OUTPUT_FILE=$(basename "$JSON_FILE" .json).parquet
 
@@ -219,4 +221,4 @@ if __name__ == "__main__":
         pass
 
     else:
-        subprocess.run(['condor_submit', 'submit.jdl'], shell=True, check=True)
+        subprocess.run(['condor_submit', 'submit.jdl'], shell=True)
