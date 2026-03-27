@@ -5,18 +5,34 @@ import shutil
 from pathlib import Path
 from datetime import datetime
 
-def load_bash_template():
+def load_bash_template(outdir):
 
     # Define the bash script template
     bash_template = """#!/bin/bash
+
+# Extract the filename and swap .json for .parquet
+OUTPUT_FILE=$(basename "$JSON_FILE" .json).parquet
 
 # Check current directory to make sure that input files are transferred
 ls -ltrh
 echo ""
 
-echo "python run.py -s $JSON_FILE"
+echo "Executing: python run.py -s $JSON_FILE"
 python run.py -s $JSON_FILE
-"""
+
+# 3. Transfer the specific output file to EOS
+echo "Transferring $OUTPUT_FILE to EOS..."
+xrdcp "$OUTPUT_FILE" "root://cmseos.fnal.gov/{0}/"
+
+# 4. Safety check: ensure transfer was successful
+if [ $? -eq 0 ]; then
+    echo "Transfer successful. Cleaning up local output."
+    rm "$OUTPUT_FILE"
+else
+    echo "Error: xrdcp transfer failed!"
+    exit 1
+fi
+""".format(outdir)
 
     return bash_template
 
@@ -169,7 +185,8 @@ if __name__ == "__main__":
     now = datetime.now()
     formatted_date = now.strftime("%Y%m%d")
 
-    mkdir_cmd = ['eos', 'root://cmseos.fnal.gov', 'mkdir', '-p', f'/store/user/jongho/vjet_preprocess_{formatted_date}']
+    output_dir = f'/store/user/jongho/vjet_preprocess_{formatted_date}'
+    mkdir_cmd = ['eos', 'root://cmseos.fnal.gov', 'mkdir', '-p', output_dir]
     subprocess.run(mkdir_cmd)
 
     # Condor log dir
@@ -190,7 +207,7 @@ if __name__ == "__main__":
 
     file_split(args.sample, args.year, args.split)
 
-    bash_script = load_bash_template()
+    bash_script = load_bash_template(output_dir)
     with open(f'run.sh','w') as bashfile:
         bashfile.write(bash_script)
 
