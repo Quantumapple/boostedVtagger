@@ -59,7 +59,7 @@ error                 = {0}/{1}/$(ClusterId).$(ProcId).stderr
 log                   = {0}/{1}/condor.log
 +JobFlavour           = "workday"
 +SingularityImage = "/cvmfs/unpacked.cern.ch/registry.hub.docker.com/coffeateam/coffea-dask-almalinux9:2025.12.0-py3.12"
-queue input_json from job_config/*.json
+queue input_json matching files job_configs/*.json
 """.format(condor_log_dir, subdir)
 
     return jdl
