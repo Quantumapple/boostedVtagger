@@ -1,7 +1,7 @@
 import json
 import argparse
 import subprocess
-import shutil
+import shutil, os
 from pathlib import Path
 from datetime import datetime
 
@@ -221,4 +221,6 @@ if __name__ == "__main__":
         pass
 
     else:
-        subprocess.run(['condor_submit', 'submit.jdl'], shell=True)
+        cmd = 'condor_submit submit.jdl'
+        os.system(cmd)
+        # subprocess.run(['condor_submit', 'submit.jdl'], shell=True) # LPC cluster doesn't like subprocess to submit condor jobs
