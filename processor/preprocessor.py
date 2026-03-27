@@ -65,6 +65,7 @@ class PreProcessor(ProcessorABC):
         start = time.time()
 
         dataset = events.metadata["dataset"]
+        print(f'Process {dataset}')
 
         def build_p4(obj):
             return ak.zip(
@@ -216,17 +217,9 @@ class PreProcessor(ProcessorABC):
         df = df.dropna()  # drop events with NaN genjetmass
 
         if not df.empty:
-            df.to_parquet(f'{dataset}_test.parquet')
+            df.to_parquet(f'{dataset}.parquet')
 
-        print(f"Saved parquet in {time.time() - start:.1f}s")
-
-        # print(f"Processed {len(df)} events in {time.time() - start:.1f}s")
-        # print(df)
-
-        # fname = events.behavior["__events_factory__"]._partition_key.replace("/", "_")
-        # fname = "condor_" + fname
-        # self.save_dfs_parquet(df, fname)
-
+        print(f"Processed {len(df)} events in {time.time() - start:.1f}s")
         return {}
 
     def postprocess(self, accumulator):
