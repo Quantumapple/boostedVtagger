@@ -14,7 +14,7 @@ def natural_key(text):
 
 def merge_by_sample_key(input_path, pattern):
 
-    files = Path(input_path).glob(f'*{pattern}*')
+    files = list(Path(input_path).glob(f'*{pattern}*'))
 
     if len(files) == 0:
         print('No input files found.')
