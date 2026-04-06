@@ -10,6 +10,7 @@ def natural_key(text):
     Splits text into a list of strings and integers.
     e.g., "item10" -> ["item", 10]
     """
+    text = str(text)
     return [int(c) if c.isdigit() else c.lower() for c in re.split(r'(\d+)', text)]
 
 def merge_by_sample_key(input_path, pattern):
@@ -86,4 +87,5 @@ if __name__ == "__main__":
 
     for isample in tqdm(sample_keys, desc="Processing samples"):
         df = merge_by_sample_key(args.inputdir, isample)
-        df.to_parquet(outdir / f'{isample}.parquet')
+        if not df.empty:
+            df.to_parquet(outdir / f'{isample}.parquet')
