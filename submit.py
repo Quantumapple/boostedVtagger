@@ -50,14 +50,17 @@ def load_jdl_template(condor_log_dir, subdir):
     ### testmatch    = 3 days
     ### nextweek     = 1 week
 
+    # Extract the filename (e.g., QCD_HT-600to800_0) from the path using $Fn(path)
+
     jdl = """universe              = vanilla
 executable            = run.sh
 should_Transfer_Files = YES
 whenToTransferOutput  = ON_EXIT
+sample_name           = $Fn(input_json)
 arguments             = $(input_json)
 transfer_Input_Files  = processor, run.py, $(input_json)
-output                = {0}/{1}/$(ClusterId).$(ProcId).stdout
-error                 = {0}/{1}/$(ClusterId).$(ProcId).stderr
+output                = {0}/{1}/$(sample_name).stdout
+error                 = {0}/{1}/$(sample_name).stderr
 log                   = {0}/{1}/condor.log
 +JobFlavour           = "workday"
 +SingularityImage = "/cvmfs/unpacked.cern.ch/registry.hub.docker.com/coffeateam/coffea-dask-almalinux9:2025.12.0-py3.12"
