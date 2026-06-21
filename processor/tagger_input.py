@@ -41,7 +41,7 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict['pfcands_dphi'] = leadingfj.delta_phi(matched_pfcands)
     raw_deta = matched_pfcands.eta - leadingfj.eta
     fj_etasign = ak.where(leadingfj.eta >= 0, 1, -1)
-    pfcands_dict['pfcand_deta'] = raw_deta * fj_etasign
+    pfcands_dict['pfcands_deta'] = raw_deta * fj_etasign
     pfcands_dict['pfcands_dr'] = np.hypot(pfcands_dict['pfcands_dphi'], pfcands_dict['pfcands_deta'])
 
     return pfcands_dict
