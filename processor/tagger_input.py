@@ -26,6 +26,7 @@ def get_pfcands_features(events_after_preselection, jet_idx):
 
     leadingfj = ak.firsts(events_after_preselection.FatJet[jet_idx])
 
+    pfcands_dict['pfcands_pdgId'] = matched_pfcands.pdgId * 1.
     pfcands_dict['pfcands_px'] = matched_pfcands.px
     pfcands_dict['pfcands_py'] = matched_pfcands.py
     pfcands_dict['pfcands_pz'] = matched_pfcands.pz
@@ -43,5 +44,10 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     fj_etasign = ak.where(leadingfj.eta >= 0, 1, -1)
     pfcands_dict['pfcands_deta'] = raw_deta * fj_etasign
     pfcands_dict['pfcands_dr'] = np.hypot(pfcands_dict['pfcands_dphi'], pfcands_dict['pfcands_deta'])
+
+    pfcands_dict['pfcands_d0'] = matched_pfcands.d0
+    pfcands_dict['pfcands_dz'] = matched_pfcands.dz
+    pfcands_dict['pfcands_d0sig'] = matched_pfcands.d0 / matched_pfcands.d0Err
+    pfcands_dict['pfcands_dzsig'] = matched_pfcands.dz / matched_pfcands.dzErr
 
     return pfcands_dict
