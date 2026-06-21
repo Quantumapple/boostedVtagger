@@ -8,6 +8,7 @@ from coffea.processor import ProcessorABC
 from coffea.nanoevents.methods import candidate
 from coffea.analysis_tools import PackedSelection
 from .tagger_gen_matching import match_Wplus, match_Wminus, match_Z, match_QCD
+from .tagger_input import get_pfcands_features
 
 ### Warning ignorance
 import warnings
@@ -32,23 +33,14 @@ class PreProcessor(ProcessorABC):
         self.GenPartvars = [
             "fj_genjetmass",
             # W boson (hadronic)
-            "fj_isWplus_Matched",
-            "fj_isWplus_2q",
-            "fj_Wplus_nprongs",
-            "fj_Wplus_ncquarks",
+            "fj_isWplus",
             "fj_isWplus_ud",
             "fj_isWplus_cs",
-            "fj_isWminus_Matched",
-            "fj_isWminus_2q",
-            "fj_Wminus_nprongs",
-            "fj_Wminus_ncquarks",
+            "fj_isWminus",
             "fj_isWminus_ud",
             "fj_isWminus_cs",
             # Z boson (hadronic)
-            "fj_isZ_Matched",
-            "fj_isZ_2q",
-            "fj_Z_nprongs",
-            "fj_Z_ncquarks",
+            "fj_isZ",
             "fj_isZ_bb",
             "fj_isZ_cc",
             "fj_isZ_qq",
@@ -142,16 +134,19 @@ class PreProcessor(ProcessorABC):
         #### Ak8 jets
         #### be separated from any isolated leptons or photons by ∆R > 0.8
         fatjets = events.FatJet
-        fj_selections = (fatjets.pt > 200) & (abs(fatjets.eta) < 2.5) & tight_jet_id(fatjets)
-        fatjets = fatjets[fj_selections]
-        fatjets = fatjets[ak.argsort(fatjets.pt, ascending=False)]
+        is_good = (fatjets.pt > 200) & (abs(fatjets.eta) < 2.5) & tight_jet_id(fatjets)
 
         #### We only keep jets where ALL leptons are DeltaR > 0.8 away
         dr_table = fatjets.metric_table(candidatelep_p4)
-        clean_mask = ak.all(dr_table > 0.8, axis=-1)
-        candidatefj = fatjets[clean_mask]
+        is_clean = ak.all(dr_table > 0.8, axis=-1)
+        total_mask = is_good & is_clean
 
-        # Take only the leading fat jet (highest pT) per event
+        #### Use ak.mask to find the index relative to the ORIGINAL collection
+        # ak.mask turns 'False' entries into 'None' but keeps the array length the same.
+        # argmax will ignore 'None' and return the index in the original FatJet list.
+        leading_fj_idx = ak.argmax(ak.mask(fatjets.pt, total_mask), axis=1, keepdims=True)
+
+        candidatefj = fatjets[total_mask]
         leadingfj = ak.firsts(candidatefj)
 
         # =========== AK8 jet-level variables ===========
@@ -208,6 +203,11 @@ class PreProcessor(ProcessorABC):
             key: np.squeeze(np.array(value[selection.all(*selection.names)]))
             for key, value in skimmed_vars.items()
         }
+
+        pfcands = get_pfcands_features(
+            events[selection.all(*selection.names)],
+            leading_fj_idx[selection.all(*selection.names)]
+        )
 
         # =========== Convert and save ===========
         for key in skimmed_vars:
