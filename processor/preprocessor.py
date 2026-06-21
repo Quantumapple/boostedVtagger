@@ -205,7 +205,7 @@ class PreProcessor(ProcessorABC):
             for key, value in skimmed_vars.items()
         }
 
-        pfcands = get_pfcands_features(
+        pfcands_dict = get_pfcands_features(
             events[selection.all(*selection.names)],
             leading_fj_idx[selection.all(*selection.names)]
         )
