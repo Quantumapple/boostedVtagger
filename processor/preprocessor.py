@@ -31,7 +31,7 @@ class PreProcessor(ProcessorABC):
         # have the same structure and can be merged for training.
 
         self.GenPartvars = [
-            "fj_genjetmass",
+            # "fj_genjetmass",
             # W boson (hadronic)
             "fj_isWplus",
             "fj_isWplus_ud",
@@ -147,6 +147,7 @@ class PreProcessor(ProcessorABC):
         leading_fj_idx = ak.argmax(ak.mask(fatjets.pt, total_mask), axis=1, keepdims=True)
 
         candidatefj = fatjets[total_mask]
+        candidatefj = candidatefj[ak.argsort(candidatefj.pt, ascending=False)]
         leadingfj = ak.firsts(candidatefj)
 
         # =========== AK8 jet-level variables ===========
@@ -173,7 +174,7 @@ class PreProcessor(ProcessorABC):
 
         AllGenVars = {
             **GenVars,
-            **{"fj_genjetmass": leadingfj.matched_gen.mass},
+            # **{"fj_genjetmass": leadingfj.matched_gen.mass},
         }
 
         # Fill missing variables with zeros if not applicable to this sample
