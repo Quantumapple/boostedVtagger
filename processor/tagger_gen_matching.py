@@ -59,7 +59,7 @@ def _match_boson(
     boson_pdgid: int,
     use_sign: bool = False,
     positive: bool = True,
-    label: str = "V",
+    label: str = "Z",
 ):
     """
     Core boson matching logic. Shared by match_Z, match_Wplus, match_Wminus.
@@ -137,18 +137,14 @@ def _match_boson(
     both_quarks_in_cone = nprongs == 2
 
     # c quarks — reuse already-masked pdgId array
-    cquarks = daughters_nov[daughters_nov_pdgId == c_PDGID]
-    ncquarks = ak.sum(fatjet.delta_r(cquarks) < JET_DR, axis=1)
+    # cquarks = daughters_nov[daughters_nov_pdgId == c_PDGID]
 
     # Final matching: fully merged hadronic decay
     matched_mask = is_2q & both_quarks_in_cone
 
     p = f"fj_is{label}"
     genVars = {
-        f"{p}_Matched": matched_mask,
-        f"{p}_2q": is_2q & matched_mask,  # combined flag kept for convenience
-        f"fj_{label}_nprongs": nprongs,
-        f"fj_{label}_ncquarks": ncquarks,
+        f"{p}": matched_mask,
     }
 
     # Add decay mode specific flags
