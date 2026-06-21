@@ -36,7 +36,7 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict['pfcands_logptrel'] = np.log(pfcands_dict['pfcands_ptrel'])
     pfcands_dict['pfcands_erel'] = matched_pfcands.energy/leadingfj.energy
     pfcands_dict['pfcands_logerel'] = np.log(pfcands_dict['pfcands_erel'])
-    pfcands_dict['pfcands_charge'] = matched_pfcands.charge
+    pfcands_dict['pfcands_charge'] = matched_pfcands.charge * 1.
 
     pfcands_dict['pfcands_dphi'] = leadingfj.delta_phi(matched_pfcands)
     raw_deta = matched_pfcands.eta - leadingfj.eta
