@@ -56,8 +56,8 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict['pfcands_d0sig'] = matched_pfcands.d0 / matched_pfcands.d0Err
     pfcands_dict['pfcands_dzsig'] = matched_pfcands.dz / matched_pfcands.dzErr
 
-    pfcands_dict["pfcand_VTXass"] = matched_pfcands.pvAssocQuality
-    pfcands_dict["pfcand_lostInnerHits"] = matched_pfcands.lostInnerHits
-    pfcands_dict["pfcand_quality"] = matched_pfcands.trkQuality
+    pfcands_dict["pfcand_VTXass"] = matched_pfcands.pvAssocQuality * 1.
+    pfcands_dict["pfcand_lostInnerHits"] = matched_pfcands.lostInnerHits * 1.
+    pfcands_dict["pfcand_quality"] = matched_pfcands.trkQuality * 1.
 
     return pfcands_dict
