@@ -173,17 +173,21 @@ class PreProcessor(ProcessorABC):
         ###### =========== Gen-level matching ===========
         genparts = events_passed.GenPart
         GenVars = {}
+        matched_mask = ak.zeros_like(passed_mask, dtype=bool) # Default all to False
 
         if "Wto2Q" in dataset:
-            wp, _ = match_Wplus(genparts, leadingfj_passed)
-            wm, _ = match_Wminus(genparts, leadingfj_passed)
+            wp, wp_m = match_Wplus(genparts, leadingfj_passed)
+            wm, wm_m = match_Wminus(genparts, leadingfj_passed)
             GenVars = {**wp, **wm}
+            matched_mask = wp_m | wm_m  # Match if it's either W+ or W-
         elif "Zto2Q" in dataset:
-            zv, _ = match_Z(genparts, leadingfj_passed)
+            zv, z_m = match_Z(genparts, leadingfj_passed)
             GenVars = {**zv}
+            matched_mask = z_m
         elif "QCD" in dataset:
-            qv, _ = match_QCD(genparts, leadingfj_passed)
+            qv, q_m = match_QCD(genparts, leadingfj_passed)
             GenVars = {**qv}
+            matched_mask = q_m
 
         # Add GenJet Mass (Fill with -1 if no match exists)
         GenVars["fj_genjetmass"] = ak.fill_none(leadingfj_passed.matched_gen.mass, -1)
@@ -202,15 +206,19 @@ class PreProcessor(ProcessorABC):
         # Calls the modular function with the correct event-to-jet mapping
         pfcands_dict = get_pfcands_features(events_passed, leading_fj_idx_passed)
 
-        # Merge PFCands into the final dictionary
-        # These will be Jagged Arrays (variable length per event)
+        # --- Final Filtering ---
+        skimmed_vars = {key: value[matched_mask] for key, value in skimmed_vars.items()}
+
+        # 2. Apply to PFCand variables
+        for key in pfcands_dict:
+            pfcands_dict[key] = pfcands_dict[key][matched_mask]
+
+        # 3. Merge them as usual
         for key, jagged_array in pfcands_dict.items():
             skimmed_vars[key] = jagged_array
 
         # --- Final Save (Weaver-Ready Parquet) ---
-        # We convert to ak.Array and save directly. Weaver's 'ak.from_parquet'
-        # is optimized for this format.
-
+        # We convert to ak.Array and save directly. Weaver's 'ak.from_parquet' is optimized for this format.
         output_array = ak.Array(skimmed_vars)
 
         if len(output_array) > 0:
