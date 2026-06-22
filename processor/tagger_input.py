@@ -60,5 +60,50 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict["pfcand_VTXass"] = matched_pfcands.pvAssocQuality * 1.
     pfcands_dict["pfcand_lostInnerHits"] = matched_pfcands.lostInnerHits * 1.
     pfcands_dict["pfcand_quality"] = matched_pfcands.trkQuality * 1.
+    pfcands_dict["pfcand_normchi2"] = np.floor(matched_pfcands.trkChi2) * 1.
 
     return pfcands_dict
+
+def get_svs_features(events_after_preselection, jet_idx):
+
+    svs_dict = {}
+
+    # 1. Get the Jet Object for relative calculations
+    leadingfj = ak.firsts(events_after_preselection.FatJet[jet_idx])
+
+    # 2. Match and Extract SVs using the mapping table
+    # mapping table: FatJetSVs (jetIdx -> sVIdx)
+    mapping = events_after_preselection.FatJetSVs
+
+    # Mask to find SVs belonging to our leading_fj_idx
+    sv_mask = (mapping.jetIdx == jet_idx) & (mapping.sVIdx != -1)
+
+    # Extract the actual SV objects from the global SV collection
+    matched_svs = events_after_preselection.SV[mapping.sVIdx[sv_mask]]
+
+    # 3. SORTING: SVs are almost always sorted by dxySig (Displacement Significance)
+    # This helps the AI see the most 'displaced' (likely B/C decay) vertices first.
+    sv_sort_idx = ak.argsort(matched_svs.dxySig, ascending=False)
+    matched_svs = matched_svs[sv_sort_idx]
+
+    svs_dict['sv_dphi'] = leadingfj.delta_phi(matched_svs)
+    raw_deta = matched_svs.eta - leadingfj.eta
+    fj_etasign = ak.where(leadingfj.eta >= 0, 1, -1)
+    svs_dict['sv_deta'] = raw_deta * fj_etasign
+    svs_dict['sv_abseta'] = np.abs(matched_svs.eta)
+    svs_dict["sv_mass"] = matched_svs.mass
+    svs_dict["sv_pt_log"] = np.log(matched_svs.pt)
+
+    svs_dict["sv_ntracks"] = matched_svs.ntracks
+    svs_dict["sv_normchi2"] = matched_svs.chi2
+    svs_dict["sv_dxy"] = matched_svs.dxy
+    svs_dict["sv_dxysig"] = matched_svs.dxySig
+    svs_dict["sv_d3d"] = matched_svs.dlen
+    svs_dict["sv_d3dsig"] = matched_svs.dlenSig
+
+    svs_dict["sv_px"] = matched_svs.px
+    svs_dict["sv_py"] = matched_svs.py
+    svs_dict["sv_pz"] = matched_svs.pz
+    svs_dict["sv_energy"] = matched_svs.energy
+
+    return svs_dict
