@@ -31,7 +31,7 @@ class PreProcessor(ProcessorABC):
         # have the same structure and can be merged for training.
 
         self.GenPartvars = [
-            # "fj_genjetmass",
+            "fj_genjetmass",
             # W boson (hadronic)
             "fj_isWplus",
             "fj_isWplus_ud",
@@ -150,77 +150,73 @@ class PreProcessor(ProcessorABC):
         candidatefj = candidatefj[ak.argsort(candidatefj.pt, ascending=False)]
         leadingfj = ak.firsts(candidatefj)
 
+        selection = PackedSelection()
+        selection.add("fjselection", ak.num(candidatefj) >= 1)
+        passed_mask = selection.all(*selection.names)
+
+        if np.sum(passed_mask) == 0:
+            return {}
+
+        events_passed = events[passed_mask]
+        leadingfj_passed = leadingfj[passed_mask]
+        leading_fj_idx_passed = leading_fj_idx[passed_mask]
+
         # =========== AK8 jet-level variables ===========
-        FatJetVars = {
-            f"fj_{var}": leadingfj[var]
-            for var in ["pt", "eta", "phi", "mass", "msoftdrop"]
+        skimmed_vars = {
+            "fj_pt": leadingfj_passed.pt,
+            "fj_eta": leadingfj_passed.eta,
+            "fj_phi": leadingfj_passed.phi,
+            "fj_mass": leadingfj_passed.mass,
+            "fj_msoftdrop": leadingfj_passed.msoftdrop,
         }
-        FatJetVars["fj_numFatjets"] = ak.num(candidatefj)
 
         ###### =========== Gen-level matching ===========
-        genparts = events.GenPart
+        genparts = events_passed.GenPart
         GenVars = {}
 
         if "Wto2Q" in dataset:
-            wplus_genvars, _ = match_Wplus(genparts, leadingfj)
-            wminus_genvars, _ = match_Wminus(genparts, leadingfj)
-            GenVars = {**wplus_genvars, **wminus_genvars}
+            wp, _ = match_Wplus(genparts, leadingfj_passed)
+            wm, _ = match_Wminus(genparts, leadingfj_passed)
+            GenVars = {**wp, **wm}
         elif "Zto2Q" in dataset:
-            z_genvars, _ = match_Z(genparts, leadingfj)
-            GenVars = {**z_genvars}
+            zv, _ = match_Z(genparts, leadingfj_passed)
+            GenVars = {**zv}
         elif "QCD" in dataset:
-            qcd_genvars, _ = match_QCD(genparts, leadingfj)
-            GenVars = {**qcd_genvars}
+            qv, _ = match_QCD(genparts, leadingfj_passed)
+            GenVars = {**qv}
 
-        AllGenVars = {
-            **GenVars,
-            # **{"fj_genjetmass": leadingfj.matched_gen.mass},
-        }
+        # Add GenJet Mass (Fill with -1 if no match exists)
+        GenVars["fj_genjetmass"] = ak.fill_none(leadingfj_passed.matched_gen.mass, -1)
 
-        # Fill missing variables with zeros if not applicable to this sample
-        GenVars = {
-            key: AllGenVars[key] if key in AllGenVars else np.zeros(len(genparts))
-            for key in self.GenPartvars
-        }
-
-        for key in GenVars:
+        # Loop to ensure consistency across all samples
+        for key in self.GenPartvars:
+            val = GenVars.get(key, np.zeros(len(events_passed)))
             try:
-                GenVars[key] = ak.to_numpy(GenVars[key])
+                # Convert to numpy for a flat jet-level column
+                skimmed_vars[key] = ak.to_numpy(val)
             except Exception as e:
-                raise RuntimeError(f"Failed to convert {key} to numpy: {e}")
+                # Fallback for complex awkward types if to_numpy fails
+                skimmed_vars[key] = ak.fill_none(val, 0).to_numpy()
 
-        # =========== Combine all variables ===========
-        skimmed_vars = {**FatJetVars, **GenVars}
+        # --- PFCand Feature Extraction ---
+        # Calls the modular function with the correct event-to-jet mapping
+        pfcands_dict = get_pfcands_features(events_passed, leading_fj_idx_passed)
 
-        # =========== Event selection ===========
-        selection = PackedSelection()
-        # Require at least one good fat jet per event
-        selection.add("fjselection", ak.num(candidatefj) >= 1)
+        # Merge PFCands into the final dictionary
+        # These will be Jagged Arrays (variable length per event)
+        for key, jagged_array in pfcands_dict.items():
+            skimmed_vars[key] = jagged_array
 
-        if np.sum(selection.all(*selection.names)) == 0:
-            return {}
+        # --- Final Save (Weaver-Ready Parquet) ---
+        # We convert to ak.Array and save directly. Weaver's 'ak.from_parquet'
+        # is optimized for this format.
 
-        skimmed_vars = {
-            key: np.squeeze(np.array(value[selection.all(*selection.names)]))
-            for key, value in skimmed_vars.items()
-        }
+        output_array = ak.Array(skimmed_vars)
 
-        pfcands_dict = get_pfcands_features(
-            events[selection.all(*selection.names)],
-            leading_fj_idx[selection.all(*selection.names)]
-        )
+        if len(output_array) > 0:
+            ak.to_parquet(output_array, f'{dataset}.parquet')
 
-        # =========== Convert and save ===========
-        for key in skimmed_vars:
-            skimmed_vars[key] = skimmed_vars[key].squeeze().tolist()
-
-        df = pd.DataFrame(skimmed_vars)
-        df = df.dropna()  # drop events with NaN genjetmass
-
-        if not df.empty:
-            df.to_parquet(f'{dataset}.parquet')
-
-        print(f"Processed {len(df)} events in {time.time() - start:.1f}s")
+        print(f"Finished {dataset}: {len(output_array)} events in {time.time() - start:.1f}s")
         return {}
 
     def postprocess(self, accumulator):
