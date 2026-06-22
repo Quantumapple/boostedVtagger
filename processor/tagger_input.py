@@ -27,11 +27,11 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     leadingfj = ak.firsts(events_after_preselection.FatJet[jet_idx])
 
     pdgIds = matched_pfcands.pdgId
-    pfcands_dict["pfcand_isEl"] = np.abs(pdgIds) == 11
-    pfcands_dict["pfcand_isMu"] = np.abs(pdgIds) == 13
-    pfcands_dict["pfcand_isChargedHad"] = np.abs(pdgIds) == 211
-    pfcands_dict["pfcand_isGamma"] = np.abs(pdgIds) == 22
-    pfcands_dict["pfcand_isNeutralHad"] = np.abs(pdgIds) == 130
+    pfcands_dict['pfcand_isEl'] = np.abs(pdgIds) == 11
+    pfcands_dict['pfcand_isMu'] = np.abs(pdgIds) == 13
+    pfcands_dict['pfcand_isChargedHad'] = np.abs(pdgIds) == 211
+    pfcands_dict['pfcand_isGamma'] = np.abs(pdgIds) == 22
+    pfcands_dict['pfcand_isNeutralHad'] = np.abs(pdgIds) == 130
 
     pfcands_dict['pfcands_px'] = matched_pfcands.px
     pfcands_dict['pfcands_py'] = matched_pfcands.py
@@ -49,6 +49,7 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     raw_deta = matched_pfcands.eta - leadingfj.eta
     fj_etasign = ak.where(leadingfj.eta >= 0, 1, -1)
     pfcands_dict['pfcands_deta'] = raw_deta * fj_etasign
+    pfcands_dict['pfcands_abseta'] = np.abs(matched_pfcands.eta)
     pfcands_dict['pfcands_dr'] = np.hypot(pfcands_dict['pfcands_dphi'], pfcands_dict['pfcands_deta'])
 
     pfcands_dict['pfcands_d0'] = matched_pfcands.d0
