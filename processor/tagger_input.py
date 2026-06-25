@@ -27,11 +27,11 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     leadingfj = ak.firsts(events_after_preselection.FatJet[jet_idx])
 
     pdgIds = matched_pfcands.pdgId
-    pfcands_dict['pfcand_isEl'] = np.abs(pdgIds) == 11
-    pfcands_dict['pfcand_isMu'] = np.abs(pdgIds) == 13
-    pfcands_dict['pfcand_isChargedHad'] = np.abs(pdgIds) == 211
-    pfcands_dict['pfcand_isGamma'] = np.abs(pdgIds) == 22
-    pfcands_dict['pfcand_isNeutralHad'] = np.abs(pdgIds) == 130
+    pfcands_dict['pfcands_isEl'] = np.abs(pdgIds) == 11
+    pfcands_dict['pfcands_isMu'] = np.abs(pdgIds) == 13
+    pfcands_dict['pfcands_isChargedHad'] = np.abs(pdgIds) == 211
+    pfcands_dict['pfcands_isGamma'] = np.abs(pdgIds) == 22
+    pfcands_dict['pfcands_isNeutralHad'] = np.abs(pdgIds) == 130
 
     pfcands_dict['pfcands_px'] = matched_pfcands.px
     pfcands_dict['pfcands_py'] = matched_pfcands.py
@@ -57,10 +57,10 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict['pfcands_d0sig'] = matched_pfcands.d0 / matched_pfcands.d0Err
     pfcands_dict['pfcands_dzsig'] = matched_pfcands.dz / matched_pfcands.dzErr
 
-    pfcands_dict["pfcand_VTXass"] = matched_pfcands.pvAssocQuality * 1.
-    pfcands_dict["pfcand_lostInnerHits"] = matched_pfcands.lostInnerHits * 1.
-    pfcands_dict["pfcand_quality"] = matched_pfcands.trkQuality * 1.
-    pfcands_dict["pfcand_normchi2"] = np.floor(matched_pfcands.trkChi2) * 1.
+    pfcands_dict["pfcands_VTXass"] = matched_pfcands.pvAssocQuality * 1.
+    pfcands_dict["pfcands_lostInnerHits"] = matched_pfcands.lostInnerHits * 1.
+    pfcands_dict["pfcands_quality"] = matched_pfcands.trkQuality * 1.
+    pfcands_dict["pfcands_normchi2"] = np.floor(matched_pfcands.trkChi2) * 1.
 
     return pfcands_dict
 
