@@ -222,7 +222,7 @@ class PreProcessor(ProcessorABC):
         output_array = ak.Array(skimmed_vars)
 
         if len(output_array) > 0:
-            ak.to_parquet(output_array, f'{dataset}.parquet')
+            ak.to_parquet(output_array, f'{dataset}.parquet', compression='LZ4')
 
         print(f"Finished {dataset}: {len(output_array)} events in {time.time() - start:.1f}s")
         return {}
