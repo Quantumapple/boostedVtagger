@@ -1,6 +1,5 @@
 import awkward as ak
 import numpy as np
-import pandas as pd
 
 import time
 
@@ -12,8 +11,7 @@ from .tagger_input import get_pfcands_features
 
 ### Warning ignorance
 import warnings
-warnings.filterwarnings("ignore", message="Missing cross-reference index ")
-
+warnings.filterwarnings("ignore", message="Missing cross-reference")
 
 class PreProcessor(ProcessorABC):
     """
