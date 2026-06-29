@@ -219,12 +219,17 @@ class PreProcessor(ProcessorABC):
 
         # --- Final Save (Weaver-Ready Parquet) ---
         # We convert to ak.Array and save directly. Weaver's 'ak.from_parquet' is optimized for this format.
-        output_array = ak.Array(skimmed_vars)
+        output_columnar = ak.zip(skimmed_vars, depth_limit=1)
 
-        if len(output_array) > 0:
-            ak.to_parquet(output_array, f'{dataset}.parquet', compression='LZ4')
+        if len(output_columnar) > 0:
+            ak.to_parquet(
+                data=output_columnar,
+                destination=f"{dataset}.parquet",
+                compression="LZ4",
+                compression_level=4,
+            )
 
-        print(f"Finished {dataset}: {len(output_array)} events in {time.time() - start:.1f}s")
+        print(f"Finished {dataset}: {len(output_columnar)} events in {time.time() - start:.1f}s")
         return {}
 
     def postprocess(self, accumulator):
