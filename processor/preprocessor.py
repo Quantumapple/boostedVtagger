@@ -217,19 +217,15 @@ class PreProcessor(ProcessorABC):
         for key, jagged_array in pfcands_dict.items():
             skimmed_vars[key] = jagged_array
 
-        # --- Final Save (Weaver-Ready Parquet) ---
-        # We convert to ak.Array and save directly. Weaver's 'ak.from_parquet' is optimized for this format.
-        output_columnar = ak.zip(skimmed_vars, depth_limit=1)
-
-        if len(output_columnar) > 0:
+        if len(skimmed_vars) > 0:
             ak.to_parquet(
-                data=output_columnar,
-                destination=f"{dataset}.parquet",
+                skimmed_vars,
+                f"{dataset}.parquet",
                 compression="LZ4",
                 compression_level=4,
             )
 
-        print(f"Finished {dataset}: {len(output_columnar)} events in {time.time() - start:.1f}s")
+        print(f"Finished {dataset}: {len(events)} events in {time.time() - start:.1f}s")
         return {}
 
     def postprocess(self, accumulator):
