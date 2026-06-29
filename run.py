@@ -32,6 +32,7 @@ if __name__ == "__main__":
         executor=processor.IterativeExecutor(status=True),
         savemetrics=True,
         schema=nanoevents.PFNanoAODSchema,
+        chunksize=1000,
     )
 
     out, metrics = run(fileset, processor_instance=p)
