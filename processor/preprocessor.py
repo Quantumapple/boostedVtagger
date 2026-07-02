@@ -217,7 +217,7 @@ class PreProcessor(ProcessorABC):
 
         if len(skimmed_vars) > 0:
             ak.to_parquet(
-                skimmed_vars,
+                ak.Array(skimmed_vars),
                 f"{dataset}.parquet",
                 compression="LZ4",
                 compression_level=4,
