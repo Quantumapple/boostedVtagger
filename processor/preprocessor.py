@@ -7,7 +7,7 @@ from coffea.processor import ProcessorABC
 from coffea.nanoevents.methods import candidate
 from coffea.analysis_tools import PackedSelection
 from .tagger_gen_matching import match_Wplus, match_Wminus, match_Z, match_QCD
-from .tagger_input import get_pfcands_features
+from .tagger_input import get_pfcands_features, get_svs_features
 
 ### Warning ignorance
 import warnings
@@ -200,19 +200,24 @@ class PreProcessor(ProcessorABC):
                 # Fallback for complex awkward types if to_numpy fails
                 skimmed_vars[key] = ak.fill_none(val, 0).to_numpy()
 
-        # --- PFCand Feature Extraction ---
-        # Calls the modular function with the correct event-to-jet mapping
+        # --- PFCand & SV Feature Extraction ---
+        # Calls the modular functions with the correct event-to-jet mapping
         pfcands_dict = get_pfcands_features(events_passed, leading_fj_idx_passed)
+        svs_dict = get_svs_features(events_passed, leading_fj_idx_passed)
 
         # --- Final Filtering ---
         skimmed_vars = {key: value[matched_mask] for key, value in skimmed_vars.items()}
 
-        # 2. Apply to PFCand variables
+        # 2. Apply to PFCand and SV variables
         for key in pfcands_dict:
             pfcands_dict[key] = pfcands_dict[key][matched_mask]
+        for key in svs_dict:
+            svs_dict[key] = svs_dict[key][matched_mask]
 
         # 3. Merge them as usual
         for key, jagged_array in pfcands_dict.items():
+            skimmed_vars[key] = jagged_array
+        for key, jagged_array in svs_dict.items():
             skimmed_vars[key] = jagged_array
 
         if len(skimmed_vars) > 0:
