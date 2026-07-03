@@ -36,6 +36,7 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict['pfcands_px'] = matched_pfcands.px
     pfcands_dict['pfcands_py'] = matched_pfcands.py
     pfcands_dict['pfcands_pz'] = matched_pfcands.pz
+    pfcands_dict['pfcands_energy'] = matched_pfcands.energy
 
     pfcands_dict['pfcands_logpt'] = np.log(matched_pfcands.pt)
     pfcands_dict['pfcands_loge'] = np.log(matched_pfcands.energy)
