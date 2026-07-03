@@ -107,9 +107,11 @@ def get_svs_features(events_after_preselection, jet_idx):
     svs_dict["sv_d3dsig"] = matched_svs.dlenSig
     svs_dict["sv_costhetasvpv"] = -np.cos(matched_svs.pAngle)
 
-    svs_dict["sv_px"] = matched_svs.px
-    svs_dict["sv_py"] = matched_svs.py
-    svs_dict["sv_pz"] = matched_svs.pz
-    svs_dict["sv_energy"] = matched_svs.energy
+    # SecondaryVertex has no top-level px/py/pz/energy fields (unlike PFCand);
+    # only its nested .p4 sub-record exposes the Lorentz vector components.
+    svs_dict["sv_px"] = matched_svs.p4.px
+    svs_dict["sv_py"] = matched_svs.p4.py
+    svs_dict["sv_pz"] = matched_svs.p4.pz
+    svs_dict["sv_energy"] = matched_svs.p4.energy
 
     return svs_dict
