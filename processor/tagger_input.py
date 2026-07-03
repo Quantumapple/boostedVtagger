@@ -89,11 +89,12 @@ def get_svs_features(events_after_preselection, jet_idx):
 
     # SecondaryVertex doesn't expose delta_phi() on its top-level record (only its
     # nested .p4 sub-record has full vector behavior), so compute the wrapped
-    # difference manually instead: sv.phi - jet.phi, wrapped to [-pi, pi].
-    raw_dphi = matched_svs.phi - leadingfj.phi
+    # difference manually instead. Matches the pfcand convention: jet.phi - obj.phi,
+    # wrapped to [-pi, pi], confirmed consistent with GloParT's training-time formula.
+    raw_dphi = leadingfj.phi - matched_svs.phi
     svs_dict['sv_dphi'] = (raw_dphi + np.pi) % (2 * np.pi) - np.pi
-    # sign by the SV's own eta (not the jet's), matching the reference implementation
-    sv_etasign = ak.where(matched_svs.eta > 0, 1, -1)
+    # sign by the jet's own eta (matches pfcand_deta and GloParT's training-time formula)
+    sv_etasign = ak.where(leadingfj.eta >= 0, 1, -1)
     svs_dict['sv_deta'] = sv_etasign * (matched_svs.eta - leadingfj.eta)
     svs_dict['sv_abseta'] = np.abs(matched_svs.eta)
     svs_dict["sv_mass"] = matched_svs.mass
