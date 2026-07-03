@@ -87,10 +87,13 @@ def get_svs_features(events_after_preselection, jet_idx):
     sv_sort_idx = ak.argsort(matched_svs.dxySig, ascending=False)
     matched_svs = matched_svs[sv_sort_idx]
 
-    svs_dict['sv_dphi'] = leadingfj.delta_phi(matched_svs)
-    raw_deta = matched_svs.eta - leadingfj.eta
-    fj_etasign = ak.where(leadingfj.eta >= 0, 1, -1)
-    svs_dict['sv_deta'] = raw_deta * fj_etasign
+    # matched_svs.delta_phi(leadingfj), not the reverse: coffea's SecondaryVertexArray
+    # isn't recognized by the `vector` library as having azimuthal coords when passed
+    # as the second (`other`) argument, so leadingfj.delta_phi(matched_svs) asserts.
+    svs_dict['sv_dphi'] = matched_svs.delta_phi(leadingfj)
+    # sign by the SV's own eta (not the jet's), matching the reference implementation
+    sv_etasign = ak.where(matched_svs.eta > 0, 1, -1)
+    svs_dict['sv_deta'] = sv_etasign * (matched_svs.eta - leadingfj.eta)
     svs_dict['sv_abseta'] = np.abs(matched_svs.eta)
     svs_dict["sv_mass"] = matched_svs.mass
     svs_dict["sv_pt_log"] = np.log(matched_svs.pt)
@@ -101,6 +104,7 @@ def get_svs_features(events_after_preselection, jet_idx):
     svs_dict["sv_dxysig"] = matched_svs.dxySig
     svs_dict["sv_d3d"] = matched_svs.dlen
     svs_dict["sv_d3dsig"] = matched_svs.dlenSig
+    svs_dict["sv_costhetasvpv"] = -np.cos(matched_svs.pAngle)
 
     svs_dict["sv_px"] = matched_svs.px
     svs_dict["sv_py"] = matched_svs.py
