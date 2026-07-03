@@ -87,10 +87,11 @@ def get_svs_features(events_after_preselection, jet_idx):
     sv_sort_idx = ak.argsort(matched_svs.dxySig, ascending=False)
     matched_svs = matched_svs[sv_sort_idx]
 
-    # matched_svs.delta_phi(leadingfj), not the reverse: coffea's SecondaryVertexArray
-    # isn't recognized by the `vector` library as having azimuthal coords when passed
-    # as the second (`other`) argument, so leadingfj.delta_phi(matched_svs) asserts.
-    svs_dict['sv_dphi'] = matched_svs.delta_phi(leadingfj)
+    # SecondaryVertex doesn't expose delta_phi() on its top-level record (only its
+    # nested .p4 sub-record has full vector behavior), so compute the wrapped
+    # difference manually instead: sv.phi - jet.phi, wrapped to [-pi, pi].
+    raw_dphi = matched_svs.phi - leadingfj.phi
+    svs_dict['sv_dphi'] = (raw_dphi + np.pi) % (2 * np.pi) - np.pi
     # sign by the SV's own eta (not the jet's), matching the reference implementation
     sv_etasign = ak.where(matched_svs.eta > 0, 1, -1)
     svs_dict['sv_deta'] = sv_etasign * (matched_svs.eta - leadingfj.eta)
