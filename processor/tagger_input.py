@@ -20,9 +20,24 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcand_indices = mapping.pFCandsIdx[pfcand_mask]
     matched_pfcands = events_after_preselection.PFCands[pfcand_indices]
 
+    # btag/impact-parameter features are jet-relative, so they live on the
+    # FatJetPFCands mapping table itself, not on the global PFCands collection.
+    btag_etarel = mapping.btagEtaRel[pfcand_mask]
+    btag_ptratio = mapping.btagPtRatio[pfcand_mask]
+    btag_pparratio = mapping.btagPParRatio[pfcand_mask]
+    btag_sip3dval = mapping.btagSip3dVal[pfcand_mask]
+    btag_sip3dsig = mapping.btagSip3dSig[pfcand_mask]
+    btag_jetdistval = mapping.btagJetDistVal[pfcand_mask]
+
     # SORTING: Sort particles by descending pT within each jet
     pfcand_sort_idx = ak.argsort(matched_pfcands.pt, ascending=False)
     matched_pfcands = matched_pfcands[pfcand_sort_idx]
+    btag_etarel = btag_etarel[pfcand_sort_idx]
+    btag_ptratio = btag_ptratio[pfcand_sort_idx]
+    btag_pparratio = btag_pparratio[pfcand_sort_idx]
+    btag_sip3dval = btag_sip3dval[pfcand_sort_idx]
+    btag_sip3dsig = btag_sip3dsig[pfcand_sort_idx]
+    btag_jetdistval = btag_jetdistval[pfcand_sort_idx]
 
     leadingfj = ak.firsts(events_after_preselection.FatJet[jet_idx])
 
@@ -62,6 +77,13 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict["pfcands_lostInnerHits"] = matched_pfcands.lostInnerHits * 1.
     pfcands_dict["pfcands_quality"] = matched_pfcands.trkQuality * 1.
     pfcands_dict["pfcands_normchi2"] = np.floor(matched_pfcands.trkChi2) * 1.
+
+    pfcands_dict["pfcands_btagEtaRel"] = btag_etarel
+    pfcands_dict["pfcands_btagPtRatio"] = btag_ptratio
+    pfcands_dict["pfcands_btagPParRatio"] = btag_pparratio
+    pfcands_dict["pfcands_btagSip3dVal"] = btag_sip3dval
+    pfcands_dict["pfcands_btagSip3dSig"] = btag_sip3dsig
+    pfcands_dict["pfcands_btagJetDistVal"] = btag_jetdistval
 
     return pfcands_dict
 
