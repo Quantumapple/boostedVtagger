@@ -225,7 +225,7 @@ class PreProcessor(ProcessorABC):
         for key, jagged_array in svs_dict.items():
             skimmed_vars[key] = jagged_array
 
-        if len(skimmed_vars) > 0:
+        if int(ak.sum(matched_mask)) > 0:
             ak.to_parquet(
                 ak.Array(skimmed_vars),
                 f"{dataset}.parquet",
