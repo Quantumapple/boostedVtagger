@@ -140,7 +140,9 @@ def _match_boson(
     # cquarks = daughters_nov[daughters_nov_pdgId == c_PDGID]
 
     # Final matching: fully merged hadronic decay
-    matched_mask = is_2q & both_quarks_in_cone
+    # fill_none: events with no matched boson (empty `vs`) yield None from
+    # argmin, which would otherwise propagate through `|` and the final filter
+    matched_mask = ak.fill_none(is_2q & both_quarks_in_cone, False)
 
     p = f"fj_is{label}"
     genVars = {
@@ -149,13 +151,13 @@ def _match_boson(
 
     # Add decay mode specific flags
     if label in ["Wplus", "Wminus"]:
-        genVars[f"{p}_ud"] = is_ud & matched_mask
-        genVars[f"{p}_cs"] = is_cs & matched_mask
+        genVars[f"{p}_ud"] = ak.fill_none(is_ud, False) & matched_mask
+        genVars[f"{p}_cs"] = ak.fill_none(is_cs, False) & matched_mask
     else:
         # Z boson decay modes
-        genVars[f"{p}_bb"] = is_bb & matched_mask
-        genVars[f"{p}_cc"] = is_cc & matched_mask
-        genVars[f"{p}_qq"] = is_qq & matched_mask
+        genVars[f"{p}_bb"] = ak.fill_none(is_bb, False) & matched_mask
+        genVars[f"{p}_cc"] = ak.fill_none(is_cc, False) & matched_mask
+        genVars[f"{p}_qq"] = ak.fill_none(is_qq, False) & matched_mask
 
     return genVars, matched_mask
 
