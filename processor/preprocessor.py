@@ -175,8 +175,6 @@ class PreProcessor(ProcessorABC):
 
         ###### =========== Gen-level matching ===========
         genparts = events_passed.GenPart
-        GenVars = {}
-        matched_mask = ak.zeros_like(passed_mask, dtype=bool) # Default all to False
 
         if "Wto2Q" in dataset:
             wp, wp_m = match_Wplus(genparts, leadingfj_passed)
@@ -191,6 +189,8 @@ class PreProcessor(ProcessorABC):
             qv, q_m = match_QCD(genparts, leadingfj_passed)
             GenVars = {**qv}
             matched_mask = q_m
+        else:
+            raise ValueError(f"Unrecognized dataset category: {dataset!r} (expected name containing 'Wto2Q', 'Zto2Q', or 'QCD')")
 
         # Add GenJet Mass (Fill with -1 if no match exists)
         GenVars["fj_genjetmass"] = ak.fill_none(leadingfj_passed.matched_gen.mass, -1)
