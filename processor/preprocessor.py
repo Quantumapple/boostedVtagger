@@ -44,6 +44,11 @@ class PreProcessor(ProcessorABC):
             "fj_isZ_qq",
             # QCD
             "fj_isQCD_Matched",
+            "fj_isQCD_bb",
+            "fj_isQCD_b",
+            "fj_isQCD_cc",
+            "fj_isQCD_c",
+            "fj_isQCD_other",
         ]
 
     @property

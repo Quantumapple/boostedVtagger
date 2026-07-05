@@ -179,7 +179,8 @@ def match_QCD(genparts: GenParticleArray, fatjet: FatJetArray) -> tuple[np.array
     """
     Gen matching for QCD samples.
     A jet is considered QCD if it is not matched to any heavy object (W, Z, H, Top)
-    within JET_DR. No subcategories needed — QCD is QCD.
+    within JET_DR. Also reports diagnostic-only heavy-flavor sub-categories
+    (bb/b/cc/c/other) from the matched AK8 GenJet's hadron counts.
     """
 
     # Check if any heavy boson is within JET_DR of the fat jet
@@ -195,5 +196,19 @@ def match_QCD(genparts: GenParticleArray, fatjet: FatJetArray) -> tuple[np.array
     genVars = {
         "fj_isQCD_Matched": matched_mask,
     }
+
+    # Diagnostic-only heavy-flavor sub-categorization (bb/b/cc/c/other),
+    # based on ghost-hadron-clustered counts in the matched AK8 GenJet.
+    # Gated on matched_mask so a sub-flag can never be True for a jet that
+    # isn't itself genuine (unflagged) QCD. Does not affect fj_isQCD_Matched
+    # or any selection/weighting.
+    nb = ak.fill_none(fatjet.matched_gen.nBHadrons, 0)
+    nc = ak.fill_none(fatjet.matched_gen.nCHadrons, 0)
+
+    genVars["fj_isQCD_bb"] = matched_mask & (nb >= 2)
+    genVars["fj_isQCD_b"] = matched_mask & (nb == 1)
+    genVars["fj_isQCD_cc"] = matched_mask & (nb == 0) & (nc >= 2)
+    genVars["fj_isQCD_c"] = matched_mask & (nb == 0) & (nc == 1)
+    genVars["fj_isQCD_other"] = matched_mask & (nb == 0) & (nc == 0)
 
     return genVars, matched_mask
