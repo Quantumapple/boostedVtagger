@@ -5,7 +5,7 @@ import shutil, os
 from pathlib import Path
 from datetime import datetime
 
-def load_bash_template(outdir):
+def load_bash_template(outdir, timeout):
 
     # Define the bash script template
     bash_template = """#!/bin/bash
@@ -19,8 +19,20 @@ OUTPUT_FILE=$(basename "$JSON_FILE" .json).parquet
 ls -ltrh
 echo ""
 
-echo "Executing: python run.py -s $JSON_FILE"
-python run.py -s $JSON_FILE
+# Wrap in `timeout` so a job that's stuck (condor issue, hung xrootd read, etc.)
+# fails fast instead of silently sitting in "running" state for the full
+# +JobFlavour wall time. A timeout exit is just another failure mode from the
+# resubmission script's point of view: no output on EOS -> gets resubmitted.
+echo "Executing: timeout {1}s python run.py -s $JSON_FILE"
+timeout {1}s python run.py -s $JSON_FILE
+RC=$?
+if [ $RC -eq 124 ]; then
+    echo "Error: job timed out after {1}s"
+    exit $RC
+elif [ $RC -ne 0 ]; then
+    echo "Error: run.py failed with exit code $RC"
+    exit $RC
+fi
 
 # 3. Transfer the specific output file to EOS
 echo "Transferring $OUTPUT_FILE to EOS..."
@@ -34,7 +46,7 @@ else
     echo "Error: xrdcp transfer failed!"
     exit 1
 fi
-""".format(outdir)
+""".format(outdir, timeout)
 
     return bash_template
 
@@ -141,6 +153,76 @@ def file_split(input_json, year, size):
                         }
                     }, f, indent=4)
 
+def persist_submission_record(sub_log_dir, output_dir, args):
+    """
+    Copy the exact job_configs used for this submission, plus the EOS
+    destination, into the submission's own log dir. This makes each
+    submit_N dir self-contained so a later --resubmit only needs that one
+    path: no need to re-derive the same file split from -s/-y/-n again.
+    """
+    shutil.copytree('job_configs', sub_log_dir / 'job_configs')
+
+    meta = {
+        "output_dir": output_dir,
+        "sample": args.sample,
+        "year": args.year,
+        "split": args.split,
+        "timeout": args.timeout,
+    }
+    with open(sub_log_dir / 'meta.json', 'w') as f:
+        json.dump(meta, f, indent=4)
+
+
+def resolve_missing_jobs(resubmit_log_dir):
+    """
+    Compare the job_configs persisted for a prior submission against what's
+    actually landed on EOS, and rebuild the local ./job_configs/ directory
+    to contain only the missing (failed/timed-out/never-ran) ones.
+
+    Returns (output_dir, parent_log_dir) so the caller can reuse the same
+    EOS destination and place the resubmission's logs alongside the
+    original run's.
+    """
+    resubmit_log_dir = Path(resubmit_log_dir)
+    persisted_dir = resubmit_log_dir / 'job_configs'
+    meta_path = resubmit_log_dir / 'meta.json'
+
+    if not persisted_dir.is_dir() or not meta_path.is_file():
+        raise FileNotFoundError(
+            f"{resubmit_log_dir} doesn't look like a submission log dir "
+            f"(missing job_configs/ or meta.json)"
+        )
+
+    with open(meta_path, 'r') as f:
+        meta = json.load(f)
+    output_dir = meta["output_dir"]
+
+    expected_keys = {p.stem for p in persisted_dir.glob('*.json')}
+
+    result = subprocess.run(
+        ['eos', 'root://cmseos.fnal.gov', 'ls', output_dir],
+        capture_output=True, text=True,
+    )
+    existing_keys = {
+        Path(line).stem for line in result.stdout.splitlines() if line.endswith('.parquet')
+    }
+
+    missing_keys = sorted(expected_keys - existing_keys)
+
+    print(f"Expected {len(expected_keys)} jobs, found {len(existing_keys)} outputs on EOS.")
+    print(f"Resubmitting {len(missing_keys)} missing job(s): {missing_keys}")
+
+    outdir = Path('./job_configs')
+    if outdir.exists():
+        shutil.rmtree(outdir)
+    outdir.mkdir(exist_ok=True)
+
+    for key in missing_keys:
+        shutil.copy(persisted_dir / f"{key}.json", outdir / f"{key}.json")
+
+    return output_dir, resubmit_log_dir.parent, meta
+
+
 ## --------------------------------------
 if __name__ == "__main__":
 
@@ -151,8 +233,8 @@ if __name__ == "__main__":
         '--sample',
         metavar = 'JSONFILE',
         type = str,
-        help = 'input json file including dataset',
-        required = True,
+        help = 'input json file including dataset (required unless --resubmit is given)',
+        default = None,
         dest = 'sample',
     )
 
@@ -177,6 +259,25 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--timeout',
+        metavar = 'SECONDS',
+        help = 'per-job timeout (kills a hung run.py so the job fails fast instead of sitting idle)',
+        type = int,
+        default = 7200,
+        dest = 'timeout',
+    )
+
+    parser.add_argument(
+        '--resubmit',
+        metavar = 'LOGDIR',
+        help = 'path to a prior submission log dir (e.g. condor_log_20260326/submit_0); '
+               'resubmits only the jobs whose output is missing on EOS',
+        type = str,
+        default = None,
+        dest = 'resubmit',
+    )
+
+    parser.add_argument(
         '--dryrun',
         action = 'store_true',
         help = 'If set, condor submission will not happen',
@@ -185,17 +286,40 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # Make output directory
-    # Format as YYYYMMDD
-    now = datetime.now()
-    formatted_date = now.strftime("%Y%m%d")
+    if args.resubmit is None and args.sample is None:
+        parser.error("either -s/--sample or --resubmit is required")
 
-    output_dir = f'/store/user/jongho/vjet_preprocess_{formatted_date}'
-    mkdir_cmd = ['eos', 'root://cmseos.fnal.gov', 'mkdir', '-p', output_dir]
-    subprocess.run(mkdir_cmd)
+    # -------------------------------------------------------------
+    if args.resubmit is not None:
+        output_dir, parent_log_dir, prior_meta = resolve_missing_jobs(args.resubmit)
 
-    # Condor log dir
-    log_dir = Path(f'./condor_log_{formatted_date}')
+        if not any(Path('./job_configs').glob('*.json')):
+            print("Nothing to resubmit — all jobs already have output on EOS.")
+            raise SystemExit(0)
+
+        # -s/-y/-n aren't meaningfully re-passed on a --resubmit call; carry
+        # forward the original run's provenance for the persisted meta.json.
+        args.sample = prior_meta.get("sample")
+        args.year = prior_meta.get("year")
+        args.split = prior_meta.get("split")
+
+        log_dir = parent_log_dir
+
+    else:
+        # Make output directory
+        # Format as YYYYMMDD
+        now = datetime.now()
+        formatted_date = now.strftime("%Y%m%d")
+
+        output_dir = f'/store/user/jongho/vjet_preprocess_{formatted_date}'
+        mkdir_cmd = ['eos', 'root://cmseos.fnal.gov', 'mkdir', '-p', output_dir]
+        subprocess.run(mkdir_cmd)
+
+        log_dir = Path(f'./condor_log_{formatted_date}')
+
+        file_split(args.sample, args.year, args.split)
+
+    # Condor log dir (shared by fresh submissions and resubmissions alike)
     log_dir.mkdir(exist_ok=True)
 
     counter = 0
@@ -210,15 +334,15 @@ if __name__ == "__main__":
     print(f"Job logs will be saved to: {sub_log_dir}")
     # -------------------------------------------------------------
 
-    file_split(args.sample, args.year, args.split)
-
-    bash_script = load_bash_template(output_dir)
+    bash_script = load_bash_template(output_dir, args.timeout)
     with open(f'run.sh','w') as bashfile:
         bashfile.write(bash_script)
 
     jdl_script = load_jdl_template(condor_log_dir=log_dir, subdir=submit_subdir)
     with open(f'submit.jdl','w') as jdlfile:
         jdlfile.write(jdl_script)
+
+    persist_submission_record(sub_log_dir, output_dir, args)
 
     if args.dryrun:
         pass
