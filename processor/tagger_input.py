@@ -1,6 +1,12 @@
 import awkward as ak
 import numpy as np
 
+EL_PDGID = 11
+MU_PDGID = 13
+CH_HAD_PDGID = 211
+GAMMA_PDGID = 22
+NEUTRAL_HAD_PDGID = 130
+
 def get_pfcands_features(events_after_preselection, jet_idx):
     """
     Extracts PFCands matched to the jet at index 'jet_idx'.
@@ -42,11 +48,11 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     leadingfj = ak.firsts(events_after_preselection.FatJet[jet_idx])
 
     pdgIds = matched_pfcands.pdgId
-    pfcands_dict['pfcands_isEl'] = np.abs(pdgIds) == 11
-    pfcands_dict['pfcands_isMu'] = np.abs(pdgIds) == 13
-    pfcands_dict['pfcands_isChargedHad'] = np.abs(pdgIds) == 211
-    pfcands_dict['pfcands_isGamma'] = np.abs(pdgIds) == 22
-    pfcands_dict['pfcands_isNeutralHad'] = np.abs(pdgIds) == 130
+    pfcands_dict['pfcands_isEl'] = np.abs(pdgIds) == EL_PDGID
+    pfcands_dict['pfcands_isMu'] = np.abs(pdgIds) == MU_PDGID
+    pfcands_dict['pfcands_isChargedHad'] = np.abs(pdgIds) == CH_HAD_PDGID
+    pfcands_dict['pfcands_isGamma'] = np.abs(pdgIds) == GAMMA_PDGID
+    pfcands_dict['pfcands_isNeutralHad'] = np.abs(pdgIds) == NEUTRAL_HAD_PDGID
 
     pfcands_dict['pfcands_px'] = matched_pfcands.px
     pfcands_dict['pfcands_py'] = matched_pfcands.py
@@ -70,13 +76,17 @@ def get_pfcands_features(events_after_preselection, jet_idx):
 
     pfcands_dict['pfcands_d0'] = matched_pfcands.d0
     pfcands_dict['pfcands_dz'] = matched_pfcands.dz
-    pfcands_dict['pfcands_d0sig'] = matched_pfcands.d0 / matched_pfcands.d0Err
-    pfcands_dict['pfcands_dzsig'] = matched_pfcands.dz / matched_pfcands.dzErr
+    # Neutral (untracked) candidates carry d0/d0Err/dz/dzErr = -1 as an "N/A"
+    # sentinel; dividing sentinel/sentinel gives ~1.0, not "no information".
+    # Zero these out explicitly for candidates without a track.
+    has_track = matched_pfcands.charge != 0
+    pfcands_dict['pfcands_d0sig'] = ak.where(has_track, matched_pfcands.d0 / matched_pfcands.d0Err, 0.)
+    pfcands_dict['pfcands_dzsig'] = ak.where(has_track, matched_pfcands.dz / matched_pfcands.dzErr, 0.)
 
     pfcands_dict["pfcands_VTXass"] = matched_pfcands.pvAssocQuality * 1.
     pfcands_dict["pfcands_lostInnerHits"] = matched_pfcands.lostInnerHits * 1.
     pfcands_dict["pfcands_quality"] = matched_pfcands.trkQuality * 1.
-    pfcands_dict["pfcands_normchi2"] = np.floor(matched_pfcands.trkChi2) * 1.
+    pfcands_dict["pfcands_normchi2"] = matched_pfcands.trkChi2 * 1.
 
     pfcands_dict["pfcands_btagEtaRel"] = btag_etarel
     pfcands_dict["pfcands_btagPtRatio"] = btag_ptratio

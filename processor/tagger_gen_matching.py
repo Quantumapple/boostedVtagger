@@ -13,25 +13,15 @@ b_PDGID = 5
 g_PDGID = 21
 TOP_PDGID = 6
 
-ELE_PDGID = 11
 vELE_PDGID = 12
-MU_PDGID = 13
 vMU_PDGID = 14
-TAU_PDGID = 15
 vTAU_PDGID = 16
 
-GAMMA_PDGID = 22
 Z_PDGID = 23
 W_PDGID = 24
 HIGGS_PDGID = 25
 
-PI_PDGID = 211
-PO_PDGID = 221
-PP_PDGID = 111
-
 GEN_FLAGS = ["fromHardProcess", "isLastCopy"]
-
-FILL_NONE_VALUE = -99999
 
 JET_DR = 0.8
 
@@ -73,11 +63,11 @@ def _match_boson(
     """
     if use_sign:
         sign_mask = (genparts.pdgId == boson_pdgid) if positive else (genparts.pdgId == -boson_pdgid)
-        vs = genparts[sign_mask * genparts.hasFlags(GEN_FLAGS)]
+        vs = genparts[sign_mask & genparts.hasFlags(GEN_FLAGS)]
     else:
         vs = genparts[
             get_pid_mask(genparts, boson_pdgid, byall=False)
-            * genparts.hasFlags(GEN_FLAGS)
+            & genparts.hasFlags(GEN_FLAGS)
         ]
 
     # Find the closest boson to the fat jet
@@ -188,7 +178,7 @@ def match_QCD(genparts: GenParticleArray, fatjet: FatJetArray) -> tuple[np.array
     # Check if any heavy boson is within JET_DR of the fat jet
     heavy_objects = genparts[
         get_pid_mask(genparts, [W_PDGID, Z_PDGID, HIGGS_PDGID, TOP_PDGID], byall=False)
-        * genparts.hasFlags(GEN_FLAGS)
+        & genparts.hasFlags(GEN_FLAGS)
     ]
 
     # QCD jet = no heavy object found nearby
