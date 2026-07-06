@@ -1,4 +1,5 @@
 import os
+import re
 import argparse
 from pathlib import Path
 from jinja2 import Template
@@ -101,7 +102,7 @@ if __name__ == "__main__":
         total_jobs = len(f.readlines())
 
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_prefix = args.input_list.split('_TuneCP5')[0].replace("batch1_", "")
+    dataset_prefix = re.sub(r"batch\d+_", "", args.input_list.split('_TuneCP5')[0])
 
     script_dir = Path('.') / 'condor_scripts' / f'{dataset_prefix}' / f'job_submission_{now}'
     log_dir = Path('.') / 'condor_logs' / f'{dataset_prefix}' / f'job_submission_{now}'
