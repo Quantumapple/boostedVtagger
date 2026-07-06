@@ -60,7 +60,6 @@ class PreProcessor(ProcessorABC):
         start = time.time()
 
         dataset = events.metadata["dataset"]
-        print(f'Process {dataset}')
 
         def build_p4(obj):
             return ak.zip(
