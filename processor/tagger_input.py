@@ -35,6 +35,16 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     btag_sip3dsig = mapping.btagSip3dSig[pfcand_mask]
     btag_jetdistval = mapping.btagJetDistVal[pfcand_mask]
 
+    # CMS's b-tag IP algorithm occasionally hits a degenerate track fit (e.g. zero uncertainty on
+    # the 3D impact parameter) and leaves these undefined (NaN) for a small fraction (~0.1%) of
+    # charged candidates. Fill explicitly with 0, consistent with the d0sig/dzsig convention below.
+    btag_etarel = ak.where(np.isnan(btag_etarel), 0., btag_etarel)
+    btag_ptratio = ak.where(np.isnan(btag_ptratio), 0., btag_ptratio)
+    btag_pparratio = ak.where(np.isnan(btag_pparratio), 0., btag_pparratio)
+    btag_sip3dval = ak.where(np.isnan(btag_sip3dval), 0., btag_sip3dval)
+    btag_sip3dsig = ak.where(np.isnan(btag_sip3dsig), 0., btag_sip3dsig)
+    btag_jetdistval = ak.where(np.isnan(btag_jetdistval), 0., btag_jetdistval)
+
     # SORTING: Sort particles by descending pT within each jet
     pfcand_sort_idx = ak.argsort(matched_pfcands.pt, ascending=False)
     matched_pfcands = matched_pfcands[pfcand_sort_idx]
