@@ -170,6 +170,28 @@ class PreProcessor(ProcessorABC):
             "fj_phi": leadingfj_passed.phi,
             "fj_mass": leadingfj_passed.mass,
             "fj_msoftdrop": leadingfj_passed.msoftdrop,
+            # Official CMS tagger scores, for benchmarking our fine-tuned model against the
+            # already-deployed taggers on the same jets.
+            "fj_globalParT3_WvsQCD": leadingfj_passed.globalParT3_WvsQCD,
+            "fj_globalParT3_QCD": leadingfj_passed.globalParT3_QCD,
+            "fj_globalParT3_Xbb": leadingfj_passed.globalParT3_Xbb,
+            "fj_globalParT3_Xcc": leadingfj_passed.globalParT3_Xcc,
+            "fj_globalParT3_Xcs": leadingfj_passed.globalParT3_Xcs,
+            "fj_globalParT3_Xqq": leadingfj_passed.globalParT3_Xqq,
+            "fj_particleNetWithMass_WvsQCD": leadingfj_passed.particleNetWithMass_WvsQCD,
+            "fj_particleNetWithMass_ZvsQCD": leadingfj_passed.particleNetWithMass_ZvsQCD,
+            "fj_particleNetWithMass_QCD": leadingfj_passed.particleNetWithMass_QCD,
+            "fj_particleNet_QCD0HF": leadingfj_passed.particleNet_QCD0HF,
+            "fj_particleNet_QCD1HF": leadingfj_passed.particleNet_QCD1HF,
+            "fj_particleNet_QCD2HF": leadingfj_passed.particleNet_QCD2HF,
+            "fj_particleNet_XqqVsQCD": leadingfj_passed.particleNet_XqqVsQCD,
+            "fj_particleNet_XbbVsQCD": leadingfj_passed.particleNet_XbbVsQCD,
+            "fj_particleNet_XccVsQCD": leadingfj_passed.particleNet_XccVsQCD,
+            "fj_particleNetLegacy_QCD": leadingfj_passed.particleNetLegacy_QCD,
+            "fj_particleNetLegacy_Xbb": leadingfj_passed.particleNetLegacy_Xbb,
+            "fj_particleNetLegacy_Xcc": leadingfj_passed.particleNetLegacy_Xcc,
+            "fj_particleNetLegacy_Xqq": leadingfj_passed.particleNetLegacy_Xqq,
+            "fj_particleNetLegacy_mass": leadingfj_passed.particleNetLegacy_mass,
         }
 
         ###### =========== Gen-level matching ===========
