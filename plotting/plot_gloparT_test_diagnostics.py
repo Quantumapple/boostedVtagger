@@ -7,8 +7,8 @@ import mplhep as hep
 
 hep.style.use('CMS')
 
-CLASS_NAMES = ['Wplus', 'Wminus', 'Z']
-COLORS = ['#5790fc', '#e42536', '#964a8b']
+CLASS_NAMES = ['Wplus', 'Wminus', 'Z', 'QCD']
+COLORS = ['#5790fc', '#e42536', '#964a8b', '#f89c20']
 
 
 def _roc_curve(y_true, y_score):
@@ -68,7 +68,7 @@ def plot_roc_curves(labels, scores, output):
 
 
 def plot_score_distributions(labels, scores, output):
-    fig, axes = plt.subplots(1, 3, figsize=(18, 6), sharey=True)
+    fig, axes = plt.subplots(1, len(CLASS_NAMES), figsize=(6 * len(CLASS_NAMES), 6), sharey=True)
     bins = np.linspace(0, 1, 31)
     for i, (ax, name) in enumerate(zip(axes, CLASS_NAMES)):
         for j, true_name in enumerate(CLASS_NAMES):
