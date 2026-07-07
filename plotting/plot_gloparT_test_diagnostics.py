@@ -68,7 +68,8 @@ def plot_roc_curves(labels, scores, output):
 
 
 def plot_score_distributions(labels, scores, output):
-    fig, axes = plt.subplots(1, len(CLASS_NAMES), figsize=(6 * len(CLASS_NAMES), 6), sharey=True)
+    fig, axes = plt.subplots(2, 2, figsize=(12, 12), sharey=True)
+    axes = axes.flatten()
     bins = np.linspace(0, 1, 31)
     for i, (ax, name) in enumerate(zip(axes, CLASS_NAMES)):
         for j, true_name in enumerate(CLASS_NAMES):
@@ -76,7 +77,7 @@ def plot_score_distributions(labels, scores, output):
             ax.hist(scores[mask, i], bins=bins, histtype='step', linewidth=2,
                     color=COLORS[j], label=f'True {true_name}', density=True)
         ax.set_xlabel(f'{name} score')
-        if i == 0:
+        if i % 2 == 0:
             ax.set_ylabel('Normalized entries')
         ax.legend(fontsize=14)
         hep.cms.label('Preliminary', ax=ax, fontsize=16, rlabel='')
