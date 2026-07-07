@@ -98,6 +98,13 @@ def get_pfcands_features(events_after_preselection, jet_idx):
     pfcands_dict["pfcands_quality"] = matched_pfcands.trkQuality * 1.
     pfcands_dict["pfcands_normchi2"] = matched_pfcands.trkChi2 * 1.
 
+    pfcands_dict["pfcands_pixelBarrelLayersWithMeasurement"] = matched_pfcands.pixelBarrelLayersWithMeasurement * 1.
+    pfcands_dict["pfcands_pixelEndcapLayersWithMeasurement"] = matched_pfcands.pixelEndcapLayersWithMeasurement * 1.
+    pfcands_dict["pfcands_stripTIBLayersWithMeasurement"] = matched_pfcands.stripTIBLayersWithMeasurement * 1.
+    pfcands_dict["pfcands_stripTIDLayersWithMeasurement"] = matched_pfcands.stripTIDLayersWithMeasurement * 1.
+    pfcands_dict["pfcands_stripTOBLayersWithMeasurement"] = matched_pfcands.stripTOBLayersWithMeasurement * 1.
+    pfcands_dict["pfcands_stripTECLayersWithMeasurement"] = matched_pfcands.stripTECLayersWithMeasurement * 1.
+
     pfcands_dict["pfcands_btagEtaRel"] = btag_etarel
     pfcands_dict["pfcands_btagPtRatio"] = btag_ptratio
     pfcands_dict["pfcands_btagPParRatio"] = btag_pparratio
