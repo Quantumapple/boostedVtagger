@@ -118,6 +118,7 @@ Queue {{ total_jobs }}
 """
 
 CLUSTER_ID_RE = re.compile(r"submitted to cluster (\d+)")
+SCHEDD_RE = re.compile(r"submit jobs to (\S+)")
 
 # Must match the OUTDIR built in bash_template above.
 EOS_SERVER = "cmseos.fnal.gov"
@@ -125,7 +126,13 @@ EOS_OUTPUT_BASE = "/store/user/jongho/NanoAOD4Tagger"
 
 
 def submit_job(jdl_path):
-    """condor_submit a single-job JDL and return the new ClusterId it was assigned."""
+    """condor_submit a single-job JDL, returning (ClusterId, schedd_name) it was assigned.
+
+    LPC's condor_submit auto-picks one of several schedds and prints which one
+    ("Attempting to submit jobs to lpcschedd4.fnal.gov") -- condor_history later
+    refuses to run without being told explicitly which schedd to query via -name,
+    so that name has to be captured here and carried along in retry_state.json.
+    """
     # shell=True: LPC's condor_submit is a Python wrapper script, not a native binary;
     # invoking it via execve directly (shell=False) can raise "Exec format error" that
     # doesn't happen when run from an interactive shell (bash silently retries through
@@ -134,16 +141,19 @@ def submit_job(jdl_path):
         f"condor_submit {shlex.quote(str(jdl_path))}",
         shell=True, capture_output=True, text=True, check=True,
     )
-    match = CLUSTER_ID_RE.search(result.stdout)
-    if not match:
-        raise RuntimeError(f"Could not parse ClusterId from condor_submit output:\n{result.stdout}")
-    return int(match.group(1))
+    output = result.stdout + result.stderr
+    cluster_match = CLUSTER_ID_RE.search(output)
+    schedd_match = SCHEDD_RE.search(output)
+    if not cluster_match or not schedd_match:
+        raise RuntimeError(f"Could not parse ClusterId/schedd from condor_submit output:\n{output}")
+    return int(cluster_match.group(1)), schedd_match.group(1)
 
 
-def job_status(cluster_id, proc_id):
-    """Return (JobStatus, HoldReason/RemoveReason, ExitCode) for (cluster_id, proc_id), or (None, None, None) if not in condor_history yet."""
+def job_status(cluster_id, proc_id, schedd):
+    """Return (JobStatus, HoldReason/RemoveReason, ExitCode) for (cluster_id, proc_id) on schedd, or (None, None, None) if not in condor_history yet."""
     result = subprocess.run(
-        f"condor_history -constraint {shlex.quote(f'ClusterId=={cluster_id} && ProcId=={proc_id}')} "
+        f"condor_history -name {shlex.quote(schedd)} "
+        f"-constraint {shlex.quote(f'ClusterId=={cluster_id} && ProcId=={proc_id}')} "
         f"-af JobStatus RemoveReason ExitCode",
         shell=True, capture_output=True, text=True, check=True,
     )
@@ -185,7 +195,7 @@ def resubmit_timeouts(script_dir):
     to_resubmit = []  # [(jobid, cause), ...]
 
     for jobid, entry in state['jobs'].items():
-        status, reason, exit_code = job_status(entry['cluster_id'], entry['proc_id'])
+        status, reason, exit_code = job_status(entry['cluster_id'], entry['proc_id'], entry['schedd'])
 
         if status in (None, 1, 2):
             n_untouched += 1
@@ -222,11 +232,12 @@ def resubmit_timeouts(script_dir):
         with open(jdl_path, 'w') as f:
             f.write(jdl_content)
 
-        new_cluster_id = submit_job(jdl_path)
+        new_cluster_id, new_schedd = submit_job(jdl_path)
         for proc_id, (jobid, cause) in enumerate(to_resubmit):
             entry = state['jobs'][jobid]
             entry['cluster_id'] = new_cluster_id
             entry['proc_id'] = proc_id
+            entry['schedd'] = new_schedd
             entry['retries'] += 1
             print(f"job {jobid}: {cause}, resubmitted to cluster {new_cluster_id} "
                   f"(ProcId {proc_id}, retry {entry['retries']}/{max_retries})")
@@ -290,11 +301,11 @@ if __name__ == "__main__":
         print(f"Batch JDL Path: {batch_jdl_path.as_posix()}")
 
     else:
-        cluster_id = submit_job(batch_jdl_path)
-        print(f"{total_jobs} jobs submitted to cluster {cluster_id}")
+        cluster_id, schedd = submit_job(batch_jdl_path)
+        print(f"{total_jobs} jobs submitted to cluster {cluster_id} on {schedd}")
 
         jobs_state = {
-            str(jobid): {'cluster_id': cluster_id, 'proc_id': jobid, 'retries': 0}
+            str(jobid): {'cluster_id': cluster_id, 'proc_id': jobid, 'schedd': schedd, 'retries': 0}
             for jobid in range(total_jobs)
         }
 
