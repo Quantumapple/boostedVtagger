@@ -80,6 +80,7 @@ echo "*********"
 
 """
 
+# Used only to resubmit a single job on its own (fresh ClusterId, ProcId always 0).
 jdl_template="""universe              = vanilla
 executable            = {{ bash_file }}
 should_Transfer_Files = YES
@@ -93,6 +94,22 @@ MY.WantOS             = "el9"
 +JobFlavour           = "workday"
 
 Queue 1
+"""
+
+# Used for the initial batch: one shared cluster, ProcId 0..total_jobs-1 via Condor's own macro.
+batch_jdl_template="""universe              = vanilla
+executable            = {{ bash_file }}
+should_Transfer_Files = YES
+whenToTransferOutput  = ON_EXIT
+transfer_input_files  = {{ input_list }}
+Arguments             = {{ input_list }} $(ProcId) {{ dataset }}_$(ClusterId)_$(ProcId).root {{ dataset }}
+output                = {{ log_dir }}/{{ dataset }}.$(ProcId).$(ClusterId).stdout
+error                 = {{ log_dir }}/{{ dataset }}.$(ProcId).$(ClusterId).stderr
+log                   = {{ log_dir }}/{{ dataset }}.$(ProcId).log
+MY.WantOS             = "el9"
++JobFlavour           = "workday"
+
+Queue {{ total_jobs }}
 """
 
 CLUSTER_ID_RE = re.compile(r"submitted to cluster (\d+)")
@@ -118,10 +135,10 @@ def submit_job(jdl_path):
     return int(match.group(1))
 
 
-def job_status(cluster_id):
-    """Return (JobStatus, HoldReason/RemoveReason, ExitCode) for ProcId 0 of cluster_id, or (None, None, None) if not in condor_history yet."""
+def job_status(cluster_id, proc_id):
+    """Return (JobStatus, HoldReason/RemoveReason, ExitCode) for (cluster_id, proc_id), or (None, None, None) if not in condor_history yet."""
     result = subprocess.run(
-        f"condor_history -constraint {shlex.quote(f'ClusterId=={cluster_id} && ProcId==0')} "
+        f"condor_history -constraint {shlex.quote(f'ClusterId=={cluster_id} && ProcId=={proc_id}')} "
         f"-af JobStatus RemoveReason ExitCode",
         shell=True, capture_output=True, text=True, check=True,
     )
@@ -161,7 +178,7 @@ def resubmit_timeouts(script_dir):
     n_resubmitted = n_gave_up = n_ok = n_untouched = 0
 
     for jobid, entry in state['jobs'].items():
-        status, reason, exit_code = job_status(entry['cluster_id'])
+        status, reason, exit_code = job_status(entry['cluster_id'], entry['proc_id'])
 
         if status in (None, 1, 2):
             n_untouched += 1
@@ -184,8 +201,10 @@ def resubmit_timeouts(script_dir):
             n_gave_up += 1
             continue
 
+        # A resubmission is always a standalone Queue 1 job -> fresh ClusterId, ProcId 0.
         new_cluster_id = submit_job(entry['jdl_path'])
         entry['cluster_id'] = new_cluster_id
+        entry['proc_id'] = 0
         entry['retries'] += 1
         print(f"job {jobid}: {cause}, resubmitted to cluster {new_cluster_id} (retry {entry['retries']}/{max_retries})")
         n_resubmitted += 1
@@ -248,22 +267,36 @@ if __name__ == "__main__":
             f.write(jdl_content)
         job_jdl_paths[jobid] = jdl_path
 
+    batch_jdl_path = script_dir / 'mini2nano.jdl'
+    batch_jdl_content = Template(batch_jdl_template).render({
+        'bash_file': bash_path.as_posix(),
+        'log_dir': log_dir.as_posix(),
+        'dataset': dataset_prefix,
+        'input_list': args.input_list,
+        'total_jobs': total_jobs,
+    })
+    with open(batch_jdl_path, 'w') as f:
+        f.write(batch_jdl_content)
+
     if args.dryrun:
         print("\n--- [Dry Run Validation] ---")
         print(f"Bash Script Path: {bash_path.as_posix()}")
-        print(f"{total_jobs} job JDLs written under: {jobs_dir.as_posix()}")
+        print(f"Batch JDL Path: {batch_jdl_path.as_posix()}")
+        print(f"{total_jobs} per-job JDLs (for resubmission) written under: {jobs_dir.as_posix()}")
         print(f"Example: {job_jdl_paths[0].as_posix()}")
 
     else:
+        cluster_id = submit_job(batch_jdl_path)
+        print(f"{total_jobs} jobs submitted to cluster {cluster_id}")
+
         jobs_state = {}
         for jobid, jdl_path in job_jdl_paths.items():
-            cluster_id = submit_job(jdl_path)
             jobs_state[str(jobid)] = {
                 'jdl_path': jdl_path.as_posix(),
                 'cluster_id': cluster_id,
+                'proc_id': jobid,
                 'retries': 0,
             }
-            print(f"job {jobid}: submitted to cluster {cluster_id}")
 
         state_path = script_dir / 'retry_state.json'
         with open(state_path, 'w') as f:
