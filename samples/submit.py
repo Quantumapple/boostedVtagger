@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import shlex
 import argparse
 import subprocess
 from pathlib import Path
@@ -103,9 +104,13 @@ EOS_OUTPUT_BASE = "/store/user/jongho/NanoAOD4Tagger"
 
 def submit_job(jdl_path):
     """condor_submit a single-job JDL and return the new ClusterId it was assigned."""
+    # shell=True: LPC's condor_submit is a Python wrapper script, not a native binary;
+    # invoking it via execve directly (shell=False) can raise "Exec format error" that
+    # doesn't happen when run from an interactive shell (bash silently retries through
+    # /bin/sh on that error, which subprocess with shell=False does not).
     result = subprocess.run(
-        ["condor_submit", str(jdl_path)],
-        capture_output=True, text=True, check=True,
+        f"condor_submit {shlex.quote(str(jdl_path))}",
+        shell=True, capture_output=True, text=True, check=True,
     )
     match = CLUSTER_ID_RE.search(result.stdout)
     if not match:
@@ -116,9 +121,9 @@ def submit_job(jdl_path):
 def job_status(cluster_id):
     """Return (JobStatus, HoldReason/RemoveReason, ExitCode) for ProcId 0 of cluster_id, or (None, None, None) if not in condor_history yet."""
     result = subprocess.run(
-        ["condor_history", "-constraint", f"ClusterId=={cluster_id} && ProcId==0",
-         "-af", "JobStatus", "RemoveReason", "ExitCode"],
-        capture_output=True, text=True, check=True,
+        f"condor_history -constraint {shlex.quote(f'ClusterId=={cluster_id} && ProcId==0')} "
+        f"-af JobStatus RemoveReason ExitCode",
+        shell=True, capture_output=True, text=True, check=True,
     )
     line = result.stdout.strip()
     if not line:
