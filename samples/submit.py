@@ -80,20 +80,25 @@ echo "*********"
 
 """
 
-# Used only to resubmit a single job on its own (fresh ClusterId, ProcId always 0).
-jdl_template="""universe              = vanilla
+# Used to resubmit any number of failed jobs together as one shared cluster: Condor's
+# "queue jobid from (...)" assigns $(jobid) from our list, one per line, in order, while
+# ProcId is still its own separate 0..N-1 counter -- so $(jobid) is what maps a slot back
+# to the correct line in the original input_list.
+resubmit_jdl_template="""universe              = vanilla
 executable            = {{ bash_file }}
 should_Transfer_Files = YES
 whenToTransferOutput  = ON_EXIT
 transfer_input_files  = {{ input_list }}
-Arguments             = {{ input_list }} {{ jobid }} {{ dataset }}_$(ClusterId)_{{ jobid }}.root {{ dataset }}
-output                = {{ log_dir }}/{{ dataset }}.{{ jobid }}.$(ClusterId).stdout
-error                 = {{ log_dir }}/{{ dataset }}.{{ jobid }}.$(ClusterId).stderr
-log                   = {{ log_dir }}/{{ dataset }}.{{ jobid }}.log
+Arguments             = {{ input_list }} $(jobid) {{ dataset }}_$(ClusterId)_$(jobid).root {{ dataset }}
+output                = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(jobid).stdout
+error                 = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(jobid).stderr
+log                   = {{ log_dir }}/{{ dataset }}.$(jobid).log
 MY.WantOS             = "el9"
 +JobFlavour           = "workday"
 
-Queue 1
+queue jobid from (
+{% for j in jobids %}{{ j }}
+{% endfor %})
 """
 
 # Used for the initial batch: one shared cluster, ProcId 0..total_jobs-1 via Condor's own macro.
@@ -103,8 +108,8 @@ should_Transfer_Files = YES
 whenToTransferOutput  = ON_EXIT
 transfer_input_files  = {{ input_list }}
 Arguments             = {{ input_list }} $(ProcId) {{ dataset }}_$(ClusterId)_$(ProcId).root {{ dataset }}
-output                = {{ log_dir }}/{{ dataset }}.$(ProcId).$(ClusterId).stdout
-error                 = {{ log_dir }}/{{ dataset }}.$(ProcId).$(ClusterId).stderr
+output                = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(ProcId).stdout
+error                 = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(ProcId).stderr
 log                   = {{ log_dir }}/{{ dataset }}.$(ProcId).log
 MY.WantOS             = "el9"
 +JobFlavour           = "workday"
@@ -164,18 +169,20 @@ def eos_file_exists(remote_path):
 def resubmit_timeouts(script_dir):
     """Check retry_state.json in script_dir and resubmit any job that isn't confirmed to have produced good output.
 
-    No timeout logic of our own here: the site's +JobFlavour wall-time cap (see jdl_template)
+    No timeout logic of our own here: the site's +JobFlavour wall-time cap (see batch_jdl_template)
     kills a job that runs too long, and that just shows up below as a job that stopped
     running without a completed/verified output -- same as a crash or a hold, so it's
     handled the same way: resubmit it.
     """
-    state_path = Path(script_dir) / 'retry_state.json'
+    script_dir = Path(script_dir)
+    state_path = script_dir / 'retry_state.json'
     with open(state_path, 'r') as f:
         state = json.load(f)
 
     max_retries = state['max_retries']
     dataset = state['dataset']
-    n_resubmitted = n_gave_up = n_ok = n_untouched = 0
+    n_gave_up = n_ok = n_untouched = 0
+    to_resubmit = []  # [(jobid, cause), ...]
 
     for jobid, entry in state['jobs'].items():
         status, reason, exit_code = job_status(entry['cluster_id'], entry['proc_id'])
@@ -201,17 +208,32 @@ def resubmit_timeouts(script_dir):
             n_gave_up += 1
             continue
 
-        # A resubmission is always a standalone Queue 1 job -> fresh ClusterId, ProcId 0.
-        new_cluster_id = submit_job(entry['jdl_path'])
-        entry['cluster_id'] = new_cluster_id
-        entry['proc_id'] = 0
-        entry['retries'] += 1
-        print(f"job {jobid}: {cause}, resubmitted to cluster {new_cluster_id} (retry {entry['retries']}/{max_retries})")
-        n_resubmitted += 1
+        to_resubmit.append((jobid, cause))
+
+    if to_resubmit:
+        jdl_content = Template(resubmit_jdl_template).render({
+            'bash_file': state['bash_path'],
+            'log_dir': state['log_dir'],
+            'dataset': dataset,
+            'input_list': state['input_list'],
+            'jobids': [int(jobid) for jobid, _ in to_resubmit],
+        })
+        jdl_path = script_dir / f"resubmit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jdl"
+        with open(jdl_path, 'w') as f:
+            f.write(jdl_content)
+
+        new_cluster_id = submit_job(jdl_path)
+        for proc_id, (jobid, cause) in enumerate(to_resubmit):
+            entry = state['jobs'][jobid]
+            entry['cluster_id'] = new_cluster_id
+            entry['proc_id'] = proc_id
+            entry['retries'] += 1
+            print(f"job {jobid}: {cause}, resubmitted to cluster {new_cluster_id} "
+                  f"(ProcId {proc_id}, retry {entry['retries']}/{max_retries})")
 
     with open(state_path, 'w') as f:
         json.dump(state, f, indent=2)
-    print(f"\n{n_resubmitted} resubmitted, {n_gave_up} gave up, {n_ok} confirmed ok, {n_untouched} still running/other")
+    print(f"\n{len(to_resubmit)} resubmitted, {n_gave_up} gave up, {n_ok} confirmed ok, {n_untouched} still running/other")
 
 
 if __name__ == "__main__":
@@ -240,11 +262,9 @@ if __name__ == "__main__":
 
     script_dir = Path('.') / 'condor_scripts' / f'{dataset_prefix}' / f'job_submission_{now}'
     log_dir = Path('.') / 'condor_logs' / f'{dataset_prefix}' / f'job_submission_{now}'
-    jobs_dir = script_dir / 'jobs'
 
     script_dir.mkdir(exist_ok=True, parents=True)
     log_dir.mkdir(exist_ok=True, parents=True)
-    jobs_dir.mkdir(exist_ok=True, parents=True)
 
     bash_path = script_dir / 'mini2nano.sh'
     with open(bash_path, 'w') as f:
@@ -252,20 +272,6 @@ if __name__ == "__main__":
 
     # dataset example: batch1_Zto2Q-2Jets_Bin-PTQQ-600_TuneCP5_13p6TeV_amcatnloFXFX-pythia8.txt
     # Use "Zto2Q-2Jets_Bin-PTQQ-600" as header
-
-    job_jdl_paths = {}
-    for jobid in range(total_jobs):
-        jdl_content = Template(jdl_template).render({
-            'bash_file': bash_path.as_posix(),
-            'log_dir': log_dir.as_posix(),
-            'dataset': dataset_prefix,
-            'input_list': args.input_list,
-            'jobid': jobid,
-        })
-        jdl_path = jobs_dir / f'job_{jobid}.jdl'
-        with open(jdl_path, 'w') as f:
-            f.write(jdl_content)
-        job_jdl_paths[jobid] = jdl_path
 
     batch_jdl_path = script_dir / 'mini2nano.jdl'
     batch_jdl_content = Template(batch_jdl_template).render({
@@ -282,26 +288,23 @@ if __name__ == "__main__":
         print("\n--- [Dry Run Validation] ---")
         print(f"Bash Script Path: {bash_path.as_posix()}")
         print(f"Batch JDL Path: {batch_jdl_path.as_posix()}")
-        print(f"{total_jobs} per-job JDLs (for resubmission) written under: {jobs_dir.as_posix()}")
-        print(f"Example: {job_jdl_paths[0].as_posix()}")
 
     else:
         cluster_id = submit_job(batch_jdl_path)
         print(f"{total_jobs} jobs submitted to cluster {cluster_id}")
 
-        jobs_state = {}
-        for jobid, jdl_path in job_jdl_paths.items():
-            jobs_state[str(jobid)] = {
-                'jdl_path': jdl_path.as_posix(),
-                'cluster_id': cluster_id,
-                'proc_id': jobid,
-                'retries': 0,
-            }
+        jobs_state = {
+            str(jobid): {'cluster_id': cluster_id, 'proc_id': jobid, 'retries': 0}
+            for jobid in range(total_jobs)
+        }
 
         state_path = script_dir / 'retry_state.json'
         with open(state_path, 'w') as f:
             json.dump({
                 'dataset': dataset_prefix,
+                'input_list': args.input_list,
+                'bash_path': bash_path.as_posix(),
+                'log_dir': log_dir.as_posix(),
                 'max_retries': args.max_retries,
                 'jobs': jobs_state,
             }, f, indent=2)
