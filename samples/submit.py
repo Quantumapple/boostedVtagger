@@ -149,22 +149,30 @@ def submit_job(jdl_path):
     return int(cluster_match.group(1)), schedd_match.group(1)
 
 
-def job_status(cluster_id, proc_id, schedd):
-    """Return (JobStatus, HoldReason/RemoveReason, ExitCode) for (cluster_id, proc_id) on schedd, or (None, None, None) if not in condor_history yet."""
+def cluster_history(cluster_id, schedd):
+    """Return {proc_id: (JobStatus, RemoveReason, ExitCode)} for every ProcId under cluster_id on schedd.
+
+    condor_history isn't indexed -- it scans the schedd's history file per call -- and
+    every job from the initial submission (and every resubmission round) shares one
+    cluster_id, so one call per cluster here replaces what used to be one call per job.
+    -af:t (tab-delimited) keeps RemoveReason safely splittable even if it contains spaces
+    (e.g. condor_rm's default reason text).
+    """
     result = subprocess.run(
         f"condor_history -name {shlex.quote(schedd)} "
-        f"-constraint {shlex.quote(f'ClusterId=={cluster_id} && ProcId=={proc_id}')} "
-        f"-af JobStatus RemoveReason ExitCode",
+        f"-constraint {shlex.quote(f'ClusterId=={cluster_id}')} "
+        f"-af:t ProcId JobStatus RemoveReason ExitCode",
         shell=True, capture_output=True, text=True, check=True,
     )
-    line = result.stdout.strip()
-    if not line:
-        return None, None, None
-    parts = line.split()
-    status = int(parts[0])
-    reason = parts[1] if len(parts) > 1 and parts[1] != 'undefined' else ""
-    exit_code = int(parts[2]) if len(parts) > 2 and parts[2] != 'undefined' else None
-    return status, reason, exit_code
+    statuses = {}
+    for line in result.stdout.strip().splitlines():
+        parts = line.split('\t')
+        proc_id = int(parts[0])
+        status = int(parts[1])
+        reason = parts[2] if len(parts) > 2 and parts[2] != 'undefined' else ""
+        exit_code = int(parts[3]) if len(parts) > 3 and parts[3] != 'undefined' else None
+        statuses[proc_id] = (status, reason, exit_code)
+    return statuses
 
 
 def eos_file_exists(remote_path):
@@ -194,8 +202,15 @@ def resubmit_timeouts(script_dir):
     n_gave_up = n_ok = n_untouched = 0
     to_resubmit = []  # [(jobid, cause), ...]
 
+    unique_clusters = {(entry['schedd'], entry['cluster_id']) for entry in state['jobs'].values()}
+    print(f"Querying condor_history for {len(unique_clusters)} cluster(s) covering {len(state['jobs'])} job(s)...", flush=True)
+    history = {}  # (schedd, cluster_id) -> {proc_id: (status, reason, exit_code)}
+    for i, (schedd, cid) in enumerate(sorted(unique_clusters), start=1):
+        print(f"[{i}/{len(unique_clusters)}] condor_history for cluster {cid} on {schedd}...", flush=True)
+        history[(schedd, cid)] = cluster_history(cid, schedd)
+
     for jobid, entry in state['jobs'].items():
-        status, reason, exit_code = job_status(entry['cluster_id'], entry['proc_id'], entry['schedd'])
+        status, reason, exit_code = history[(entry['schedd'], entry['cluster_id'])].get(entry['proc_id'], (None, None, None))
 
         if status in (None, 1, 2):
             n_untouched += 1
@@ -214,13 +229,15 @@ def resubmit_timeouts(script_dir):
             cause = f'status={status}' + (f' ({reason})' if reason else '')
 
         if entry['retries'] >= max_retries:
-            print(f"job {jobid}: gave up after {entry['retries']} retries ({cause})")
+            print(f"job {jobid}: gave up after {entry['retries']} retries ({cause})", flush=True)
             n_gave_up += 1
             continue
 
+        print(f"job {jobid}: needs resubmission ({cause})", flush=True)
         to_resubmit.append((jobid, cause))
 
     if to_resubmit:
+        print(f"\nSubmitting {len(to_resubmit)} job(s) for resubmission...", flush=True)
         jdl_content = Template(resubmit_jdl_template).render({
             'bash_file': state['bash_path'],
             'log_dir': state['log_dir'],
@@ -240,7 +257,7 @@ def resubmit_timeouts(script_dir):
             entry['schedd'] = new_schedd
             entry['retries'] += 1
             print(f"job {jobid}: {cause}, resubmitted to cluster {new_cluster_id} "
-                  f"(ProcId {proc_id}, retry {entry['retries']}/{max_retries})")
+                  f"(ProcId {proc_id}, retry {entry['retries']}/{max_retries})", flush=True)
 
     with open(state_path, 'w') as f:
         json.dump(state, f, indent=2)
