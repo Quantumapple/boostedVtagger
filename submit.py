@@ -1,7 +1,7 @@
 import json
 import argparse
 import subprocess
-import shutil, os
+import shutil
 from pathlib import Path
 from datetime import datetime
 
@@ -108,15 +108,19 @@ def get_balanced_sequential_groups(files, target_size):
 
     return groups
 
+def reset_job_configs_dir(outdir, announce=False):
+    """Wipe and recreate the local ./job_configs/ dir used to stage this submission's inputs."""
+    if outdir.exists():
+        if announce:
+            print(f"Cleaning up old directory in {outdir}...")
+        shutil.rmtree(outdir)
+    outdir.mkdir(exist_ok=True)
+
+
 def file_split(input_json, year, size):
 
     outdir = Path('./job_configs')
-
-    if outdir.exists():
-        print(f"Cleaning up old directory in {outdir}...")
-        shutil.rmtree(outdir)
-
-    outdir.mkdir(exist_ok=True)
+    reset_job_configs_dir(outdir, announce=True)
 
     with open(input_json, 'r') as file:
         data = json.load(file)
@@ -213,9 +217,7 @@ def resolve_missing_jobs(resubmit_log_dir):
     print(f"Resubmitting {len(missing_keys)} missing job(s): {missing_keys}")
 
     outdir = Path('./job_configs')
-    if outdir.exists():
-        shutil.rmtree(outdir)
-    outdir.mkdir(exist_ok=True)
+    reset_job_configs_dir(outdir)
 
     for key in missing_keys:
         shutil.copy(persisted_dir / f"{key}.json", outdir / f"{key}.json")
@@ -348,6 +350,8 @@ if __name__ == "__main__":
         pass
 
     else:
-        cmd = 'condor_submit submit.jdl'
-        os.system(cmd)
-        # subprocess.run(['condor_submit', 'submit.jdl'], shell=True) # LPC cluster doesn't like subprocess to submit condor jobs
+        # LPC's condor_submit is a Python wrapper script, not a native binary: invoking it
+        # via execve directly (subprocess with shell=False) raises "Exec format error".
+        # shell=True routes it through /bin/sh like an interactive shell would, and (unlike
+        # os.system) still lets us check the return code instead of silently ignoring failures.
+        subprocess.run('condor_submit submit.jdl', shell=True, check=True)
