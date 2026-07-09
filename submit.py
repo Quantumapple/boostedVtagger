@@ -4,6 +4,7 @@ import subprocess
 import shutil
 from pathlib import Path
 from datetime import datetime
+from tqdm import tqdm
 
 def load_bash_template(outdir, timeout):
 
@@ -131,31 +132,34 @@ def file_split(input_json, year, size):
         print(f"Warning: No data found for year {year}")
         return []
 
-    # Iterate using .items() to avoid repeated lookups
-    for process, subprocesses in year_data.items():
+    # Flatten to (sub, files) pairs first so the progress bar below reflects the
+    # actual unit of work (one sample split into job configs) instead of the
+    # coarser, uneven "process" grouping.
+    samples = [
+        (sub, files)
+        for process, subprocesses in year_data.items()
+        if not process.endswith('_LO')  # avoid NLO overlap
+        for sub, files in subprocesses.items()
+    ]
 
-        if process.endswith('_LO'):
-            # This is your general condition to avoid NLO overlap
-            continue
+    for sub, files in tqdm(samples, desc="Splitting samples"):
+        # The balancing logic remains the most efficient way to partition
+        groups = get_balanced_sequential_groups(files, size)
 
-        for sub, files in subprocesses.items():
-            # The balancing logic remains the most efficient way to partition
-            groups = get_balanced_sequential_groups(files, size)
+        for idx, group in enumerate(groups):
+            job_key = f"{sub}_{idx}"
 
-            for idx, group in enumerate(groups):
-                job_key = f"{sub}_{idx}"
+            # Directly write the JSON to minimize memory residency of large dicts
+            output_path = outdir / f"{job_key}.json"
 
-                # Directly write the JSON to minimize memory residency of large dicts
-                output_path = outdir / f"{job_key}.json"
-
-                with open(output_path, "w") as f:
-                    json.dump({
-                        job_key: {
-                            "treename": "Events",
-                            "files": group,
-                            "metadata": {"year": int(year), "is_mc": True},
-                        }
-                    }, f, indent=4)
+            with open(output_path, "w") as f:
+                json.dump({
+                    job_key: {
+                        "treename": "Events",
+                        "files": group,
+                        "metadata": {"year": int(year), "is_mc": True},
+                    }
+                }, f, indent=4)
 
 def persist_submission_record(sub_log_dir, output_dir, args):
     """
