@@ -42,7 +42,24 @@ eval `scramv1 runtime -sh` # cmsenv is an alias not on the workers
 cd btvnano-prod
 
 echo "cmsRun MC_allPF_2024_NANO.py inputFiles=${INPUT_FILE} outputFile=${OUTPUT_FILE}"
-cmsRun MC_allPF_2024_NANO.py inputFiles=${INPUT_FILE} outputFile=${OUTPUT_FILE}
+
+# Retry cmsRun a few times: transient xrootd read failures against the input file
+# (e.g. dCache pool timeouts / "Operation expired") are common under load and usually
+# clear up on a later attempt, so retry here instead of relying on a manual resubmit.
+MAX_CMSRUN_ATTEMPTS=3
+for ATTEMPT in $(seq 1 $MAX_CMSRUN_ATTEMPTS); do
+    cmsRun MC_allPF_2024_NANO.py inputFiles=${INPUT_FILE} outputFile=${OUTPUT_FILE}
+    CMSRUN_EXIT=$?
+    if [ $CMSRUN_EXIT -eq 0 ]; then
+        break
+    fi
+    echo "cmsRun attempt ${ATTEMPT}/${MAX_CMSRUN_ATTEMPTS} failed with exit code ${CMSRUN_EXIT}"
+    if [ $ATTEMPT -eq $MAX_CMSRUN_ATTEMPTS ]; then
+        echo "cmsRun failed after ${MAX_CMSRUN_ATTEMPTS} attempts, giving up"
+        exit $CMSRUN_EXIT
+    fi
+    sleep 60
+done
 
 echo "\n*********"
 ls -ltrh
