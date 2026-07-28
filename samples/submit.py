@@ -278,6 +278,13 @@ def resubmit_timeouts(script_dir):
         to_resubmit.append((jobid, cause))
 
     if to_resubmit:
+        # state['bash_path'] is the worker script frozen at the original submission
+        # time; refresh it from the current bash_template so fixes made since then
+        # (e.g. the cmsRun retry/redirector-fallback logic) take effect on resubmission
+        # instead of silently reusing whatever script version was in place back then.
+        with open(state['bash_path'], 'w') as f:
+            f.write(bash_template)
+
         print(f"\nSubmitting {len(to_resubmit)} job(s) for resubmission...", flush=True)
         jdl_content = Template(resubmit_jdl_template).render({
             'bash_file': state['bash_path'],
