@@ -46,9 +46,23 @@ echo "cmsRun MC_allPF_2024_NANO.py inputFiles=${INPUT_FILE} outputFile=${OUTPUT_
 # Retry cmsRun a few times: transient xrootd read failures against the input file
 # (e.g. dCache pool timeouts / "Operation expired") are common under load and usually
 # clear up on a later attempt, so retry here instead of relying on a manual resubmit.
+# Attempt 1 uses the plain LFN, which CMSSW resolves to the local site's PFN first
+# (fastest path when it works). If that fails, later attempts prefix the LFN with the
+# CMS global redirector so xrootd can fail over to another site's disk copy (e.g. CERN)
+# instead of retrying the same unresponsive local pool.
 MAX_CMSRUN_ATTEMPTS=3
+LOCAL_REDIRECTOR="root://cmsdcadisk.fnal.gov/"
+GLOBAL_REDIRECTOR="root://cms-xrd-global.cern.ch/"
 for ATTEMPT in $(seq 1 $MAX_CMSRUN_ATTEMPTS); do
-    cmsRun MC_allPF_2024_NANO.py inputFiles=${INPUT_FILE} outputFile=${OUTPUT_FILE}
+    if [ $ATTEMPT -eq 1 ]; then
+        CMSRUN_INPUT=${INPUT_FILE}
+    else
+        # INPUT_FILE already carries the local redirector (see prepare_dataset.py); strip
+        # it so we don't end up prefixing the global redirector onto a full root:// URL.
+        CMSRUN_INPUT=${GLOBAL_REDIRECTOR}${INPUT_FILE#$LOCAL_REDIRECTOR}
+        echo "Retrying via global redirector: ${CMSRUN_INPUT}"
+    fi
+    cmsRun MC_allPF_2024_NANO.py inputFiles=${CMSRUN_INPUT} outputFile=${OUTPUT_FILE}
     CMSRUN_EXIT=$?
     if [ $CMSRUN_EXIT -eq 0 ]; then
         break
