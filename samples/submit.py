@@ -233,14 +233,22 @@ def resubmit_timeouts(script_dir):
     n_gave_up = n_ok = n_untouched = 0
     to_resubmit = []  # [(jobid, cause), ...]
 
-    unique_clusters = {(entry['schedd'], entry['cluster_id']) for entry in state['jobs'].values()}
-    print(f"Querying condor_history for {len(unique_clusters)} cluster(s) covering {len(state['jobs'])} job(s)...", flush=True)
+    # Jobs already confirmed ok (output verified on EOS) or given up on (retries
+    # exhausted) are terminal: their outcome can't change, so skip them here rather
+    # than re-querying condor_history for their cluster on every future --resubmit
+    # call just to re-derive the same answer.
+    pending = {jobid: entry for jobid, entry in state['jobs'].items() if not entry.get('done')}
+    n_done = len(state['jobs']) - len(pending)
+
+    unique_clusters = {(entry['schedd'], entry['cluster_id']) for entry in pending.values()}
+    print(f"Querying condor_history for {len(unique_clusters)} cluster(s) covering {len(pending)} pending job(s) "
+          f"({n_done} already confirmed done, skipped)...", flush=True)
     history = {}  # (schedd, cluster_id) -> {proc_id: (status, reason, exit_code)}
     for i, (schedd, cid) in enumerate(sorted(unique_clusters), start=1):
         print(f"[{i}/{len(unique_clusters)}] condor_history for cluster {cid} on {schedd}...", flush=True)
         history[(schedd, cid)] = cluster_history(cid, schedd)
 
-    for jobid, entry in state['jobs'].items():
+    for jobid, entry in pending.items():
         status, reason, exit_code = history[(entry['schedd'], entry['cluster_id'])].get(entry['proc_id'], (None, None, None))
 
         if status in (None, 1, 2):
@@ -254,6 +262,7 @@ def resubmit_timeouts(script_dir):
                 remote_path = f"{EOS_OUTPUT_BASE}/{dataset}/{output_file}"
                 if eos_file_exists(remote_path):
                     n_ok += 1
+                    entry['done'] = True
                     continue
                 cause = 'completed but output missing on EOS'
         else:
@@ -262,6 +271,7 @@ def resubmit_timeouts(script_dir):
         if entry['retries'] >= max_retries:
             print(f"job {jobid}: gave up after {entry['retries']} retries ({cause})", flush=True)
             n_gave_up += 1
+            entry['done'] = True
             continue
 
         print(f"job {jobid}: needs resubmission ({cause})", flush=True)
@@ -292,7 +302,8 @@ def resubmit_timeouts(script_dir):
 
     with open(state_path, 'w') as f:
         json.dump(state, f, indent=2)
-    print(f"\n{len(to_resubmit)} resubmitted, {n_gave_up} gave up, {n_ok} confirmed ok, {n_untouched} still running/other")
+    print(f"\n{len(to_resubmit)} resubmitted, {n_gave_up} gave up, {n_ok} confirmed ok, {n_untouched} still running/other, "
+          f"{n_done} previously confirmed done (skipped)")
 
 
 if __name__ == "__main__":
