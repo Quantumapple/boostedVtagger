@@ -115,12 +115,15 @@ echo "*********"
 # "queue jobid from (...)" assigns $(jobid) from our list, one per line, in order, while
 # ProcId is still its own separate 0..N-1 counter -- so $(jobid) is what maps a slot back
 # to the correct line in the original input_list.
+# {{ output_name }} is precomputed in Python (not $(ClusterId)-based) so that resubmitting
+# an already-succeeded job overwrites the same EOS filename instead of creating a duplicate
+# under a new ClusterId -- see parse_batch_number() / resubmit_timeouts().
 resubmit_jdl_template="""universe              = vanilla
 executable            = {{ bash_file }}
 should_Transfer_Files = YES
 whenToTransferOutput  = ON_EXIT
 transfer_input_files  = {{ input_list }}
-Arguments             = {{ input_list }} $(jobid) {{ dataset }}_$(ClusterId)_$(jobid).root {{ dataset }}
+Arguments             = {{ input_list }} $(jobid) {{ output_name }} {{ dataset }}
 output                = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(jobid).stdout
 error                 = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(jobid).stderr
 log                   = {{ log_dir }}/{{ dataset }}.$(jobid).log
@@ -133,12 +136,15 @@ queue jobid from (
 """
 
 # Used for the initial batch: one shared cluster, ProcId 0..total_jobs-1 via Condor's own macro.
+# Output filename is keyed by (batch, ProcId) rather than ClusterId: batch+jobid uniquely and
+# stably identifies a specific input file (see parse_batch_number()), so a resubmission of the
+# same job -- which gets a new ClusterId but the same jobid -- overwrites rather than duplicates.
 batch_jdl_template="""universe              = vanilla
 executable            = {{ bash_file }}
 should_Transfer_Files = YES
 whenToTransferOutput  = ON_EXIT
 transfer_input_files  = {{ input_list }}
-Arguments             = {{ input_list }} $(ProcId) {{ dataset }}_$(ClusterId)_$(ProcId).root {{ dataset }}
+Arguments             = {{ input_list }} $(ProcId) {{ dataset }}_{{ batch }}_$(ProcId).root {{ dataset }}
 output                = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(ProcId).stdout
 error                 = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(ProcId).stderr
 log                   = {{ log_dir }}/{{ dataset }}.$(ProcId).log
@@ -154,6 +160,22 @@ SCHEDD_RE = re.compile(r"submit jobs to (\S+)")
 # Must match the OUTDIR built in bash_template above.
 EOS_SERVER = "cmseos.fnal.gov"
 EOS_OUTPUT_BASE = "/store/user/jongho/NanoAOD4Tagger"
+
+
+def parse_batch_number(input_list):
+    """Extract the batch number prepare_dataset.py encodes as the first '_'-delimited
+    token of its output filename (e.g. 'batch3_QCD-...txt' -> '3'). Combined with jobid
+    (the input file's line number), this is a stable, unique identifier for a specific
+    physical input file -- unlike ClusterId, it doesn't change across resubmission
+    attempts of the same job.
+    """
+    first_token = Path(input_list).name.split('_', 1)[0]
+    if not first_token.startswith('batch'):
+        raise ValueError(
+            f"Expected {input_list!r} to start with 'batchN_' (as prepare_dataset.py "
+            f"writes), got {first_token!r} instead"
+        )
+    return first_token[len('batch'):]
 
 
 def submit_job(jdl_path):
@@ -230,6 +252,10 @@ def resubmit_timeouts(script_dir):
 
     max_retries = state['max_retries']
     dataset = state['dataset']
+    # 'batch' is absent in retry_state.json files written before the (batch, jobid)
+    # naming fix -- fall back to the old ClusterId-based naming for those so we don't
+    # mismatch against files that already exist on EOS under the old scheme.
+    batch = state.get('batch')
     n_gave_up = n_ok = n_untouched = 0
     to_resubmit = []  # [(jobid, cause), ...]
 
@@ -258,7 +284,10 @@ def resubmit_timeouts(script_dir):
             if exit_code != 0:
                 cause = f'exited with code {exit_code}'
             else:
-                output_file = f"{dataset}_{entry['cluster_id']}_{jobid}.root"
+                if batch is not None:
+                    output_file = f"{dataset}_{batch}_{jobid}.root"
+                else:
+                    output_file = f"{dataset}_{entry['cluster_id']}_{jobid}.root"
                 remote_path = f"{EOS_OUTPUT_BASE}/{dataset}/{output_file}"
                 if eos_file_exists(remote_path):
                     n_ok += 1
@@ -285,11 +314,17 @@ def resubmit_timeouts(script_dir):
         with open(state['bash_path'], 'w') as f:
             f.write(bash_template)
 
+        if batch is not None:
+            output_name = f"{dataset}_{batch}_$(jobid).root"
+        else:
+            output_name = f"{dataset}_$(ClusterId)_$(jobid).root"
+
         print(f"\nSubmitting {len(to_resubmit)} job(s) for resubmission...", flush=True)
         jdl_content = Template(resubmit_jdl_template).render({
             'bash_file': state['bash_path'],
             'log_dir': state['log_dir'],
             'dataset': dataset,
+            'output_name': output_name,
             'input_list': state['input_list'],
             'jobids': [int(jobid) for jobid, _ in to_resubmit],
         })
@@ -336,6 +371,7 @@ if __name__ == "__main__":
 
     now = datetime.now().strftime("%Y%m%d_%H%M%S")
     dataset_prefix = re.sub(r"batch\d+_", "", args.input_list.split('_TuneCP5')[0])
+    batch_number = parse_batch_number(args.input_list)
 
     script_dir = Path('.') / 'condor_scripts' / f'{dataset_prefix}' / f'job_submission_{now}'
     log_dir = Path('.') / 'condor_logs' / f'{dataset_prefix}' / f'job_submission_{now}'
@@ -355,6 +391,7 @@ if __name__ == "__main__":
         'bash_file': bash_path.as_posix(),
         'log_dir': log_dir.as_posix(),
         'dataset': dataset_prefix,
+        'batch': batch_number,
         'input_list': args.input_list,
         'total_jobs': total_jobs,
     })
@@ -379,6 +416,7 @@ if __name__ == "__main__":
         with open(state_path, 'w') as f:
             json.dump({
                 'dataset': dataset_prefix,
+                'batch': batch_number,
                 'input_list': args.input_list,
                 'bash_path': bash_path.as_posix(),
                 'log_dir': log_dir.as_posix(),
