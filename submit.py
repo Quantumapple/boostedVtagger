@@ -4,7 +4,6 @@ import subprocess
 import shutil
 from pathlib import Path
 from datetime import datetime
-from tqdm import tqdm
 
 def load_bash_template(outdir, timeout):
 
@@ -142,7 +141,10 @@ def file_split(input_json, year, size):
         for sub, files in subprocesses.items()
     ]
 
-    for sub, files in tqdm(samples, desc="Splitting samples"):
+    total = len(samples)
+    for i, (sub, files) in enumerate(samples, start=1):
+        print(f"\rSplitting samples: {i}/{total} ({sub})" + " " * 20, end="", flush=True)
+
         # The balancing logic remains the most efficient way to partition
         groups = get_balanced_sequential_groups(files, size)
 
@@ -160,6 +162,8 @@ def file_split(input_json, year, size):
                         "metadata": {"year": int(year), "is_mc": True},
                     }
                 }, f, indent=4)
+
+    print()  # end the progress line
 
 def persist_submission_record(sub_log_dir, output_dir, args):
     """
