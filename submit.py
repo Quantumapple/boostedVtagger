@@ -1,3 +1,4 @@
+import os
 import json
 import argparse
 import subprocess
@@ -161,7 +162,7 @@ def file_split(input_json, year, size):
                         "files": group,
                         "metadata": {"year": int(year), "is_mc": True},
                     }
-                }, f, indent=4)
+                }, f)
 
     print()  # end the progress line
 
@@ -172,7 +173,10 @@ def persist_submission_record(sub_log_dir, output_dir, args):
     submit_N dir self-contained so a later --resubmit only needs that one
     path: no need to re-derive the same file split from -s/-y/-n again.
     """
-    shutil.copytree('job_configs', sub_log_dir / 'job_configs')
+    # Hardlink instead of byte-copying: job_configs is never edited after being
+    # written, and both dirs live on the same filesystem, so this just records
+    # the same file content under a second path without duplicating it on disk.
+    shutil.copytree('job_configs', sub_log_dir / 'job_configs', copy_function=os.link)
 
     meta = {
         "output_dir": output_dir,
