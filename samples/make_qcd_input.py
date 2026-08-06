@@ -6,8 +6,8 @@ xrdfs, but that only works if the dataset actually lives at FNAL disk. QCD
 samples aren't all in one place, so instead we go through DAS: find the full
 dataset name under the target era, pick the site with the most complete disk
 replica, and pull the file list (LFNs) directly -- no physical-path browsing
-needed. Each line is written as root://<se>/<lfn> so the file carries its own
-resolved redirector instead of assuming FNAL for everything.
+needed. Bare LFNs are written out (same convention as make_input.sh's xrdfs
+lists); the resolved site is only used to check completeness for now.
 """
 import json
 import subprocess
@@ -92,7 +92,7 @@ def main():
 
         with open(f"{short_name}.txt", "w") as f:
             for lfn in files:
-                f.write(f"root://{se}/{lfn}\n")
+                f.write(f"{lfn}\n")
 
         print(f"  {full_dataset} -> {se} ({fraction:.2f}%), {len(files)} files -> {short_name}.txt")
 
