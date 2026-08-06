@@ -47,14 +47,18 @@ def resolve_full_dataset(short_name):
 
 
 def site_fraction(site):
-    val = site.get("dataset_fraction", 0)
+    # dataset_fraction is unreliable (reads 0.00% even for sites holding every
+    # block); block_completion -- fraction of each held block that's fully
+    # present, effectively 100% when nfiles == total_files -- is the field
+    # that actually reflects whether a site has the whole dataset.
+    val = site.get("block_completion", 0)
     if isinstance(val, str):
-        val = val.rstrip("%") or "0"
+        val = val.strip().rstrip("%") or "0"
     return float(val)
 
 
 def best_disk_site(full_dataset):
-    """Pick the DISK site with the highest dataset_fraction. TAPE-only sites
+    """Pick the DISK site with the highest block_completion. TAPE-only sites
     are excluded -- files there aren't directly readable by a running job
     without a separate staging request first."""
     records = json.loads(dasgoclient(f"site dataset={full_dataset}", json_output=True) or "[]")
