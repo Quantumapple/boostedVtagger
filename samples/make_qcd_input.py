@@ -13,7 +13,7 @@ produces for W/Z; otherwise the plain DAS LFN ("/store/...") is kept.
 import json
 import subprocess
 
-ERA = "RunIII2024Summer24MiniAODv6"
+ERA = "RunIII2024Summer24MiniAODv6-150X"
 FNAL_SITE = "T1_US_FNAL_Disk"
 FNAL_PHYSICAL_PREFIX = "/dcache/uscmsdisk"
 
