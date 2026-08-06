@@ -51,7 +51,7 @@ for filename in dataset_configs:
     total_available = len(all_files)
 
     if "QCD" in filename:
-        chunk_size = 40
+        chunk_size = 50
     else:
         chunk_size = 100
 
