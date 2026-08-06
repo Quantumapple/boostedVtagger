@@ -63,11 +63,20 @@ def site_fraction(site):
 def best_disk_site(full_dataset):
     """Pick the DISK site with the highest block_completion. TAPE-only sites
     are excluded -- files there aren't directly readable by a running job
-    without a separate staging request first."""
+    without a separate staging request first.
+
+    If FNAL disk itself is 100% complete, prefer it outright and skip
+    comparing against other sites -- matches W/Z, which is always read from
+    FNAL disk."""
     records = json.loads(dasgoclient(f"site dataset={full_dataset}", json_output=True) or "[]")
     sites = [s for rec in records for s in rec.get("site", []) if s.get("kind") == "DISK"]
     if not sites:
         return None, 0.0
+
+    fnal = next((s for s in sites if s.get("se") == FNAL_SITE), None)
+    if fnal is not None and site_fraction(fnal) == 100.0:
+        return FNAL_SITE, 100.0
+
     best = max(sites, key=site_fraction)
     return best.get("se"), site_fraction(best)
 
