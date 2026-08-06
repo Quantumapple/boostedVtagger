@@ -6,13 +6,16 @@ xrdfs, but that only works if the dataset actually lives at FNAL disk. QCD
 samples aren't all in one place, so instead we go through DAS: find the full
 dataset name under the target era, pick the site with the most complete disk
 replica, and pull the file list (LFNs) directly -- no physical-path browsing
-needed. Bare LFNs are written out (same convention as make_input.sh's xrdfs
-lists); the resolved site is only used to check completeness for now.
+needed. If the best site is FNAL disk (same as W/Z), paths are rewritten into
+FNAL's physical dCache namespace to match what make_input.sh's xrdfs browsing
+produces for W/Z; otherwise the plain DAS LFN ("/store/...") is kept.
 """
 import json
 import subprocess
 
 ERA = "RunIII2024Summer24MiniAODv6"
+FNAL_SITE = "T1_US_FNAL_Disk"
+FNAL_PHYSICAL_PREFIX = "/dcache/uscmsdisk"
 
 QCD_DATASETS = [
     "QCD-4Jets_Bin-HT-100to200_TuneCP5_13p6TeV_madgraphMLM-pythia8",
@@ -73,6 +76,16 @@ def list_files(full_dataset):
     return [line for line in dasgoclient(f"file dataset={full_dataset}").splitlines() if line.strip()]
 
 
+def to_output_path(lfn, se):
+    # FNAL's door serves its physical dCache namespace, not the LFN directly
+    # (that's why make_input.sh browses /dcache/uscmsdisk/store/mc/... for
+    # W/Z instead of the plain /store/... LFN) -- so when QCD also resolves
+    # to FNAL disk, rewrite paths the same way for consistency.
+    if se == FNAL_SITE and lfn.startswith("/store"):
+        return FNAL_PHYSICAL_PREFIX + lfn
+    return lfn
+
+
 def main():
     for short_name in QCD_DATASETS:
         print(f"Querying {short_name}...")
@@ -96,7 +109,7 @@ def main():
 
         with open(f"{short_name}.txt", "w") as f:
             for lfn in files:
-                f.write(f"{lfn}\n")
+                f.write(f"{to_output_path(lfn, se)}\n")
 
         print(f"  {full_dataset} -> {se} ({fraction:.2f}%), {len(files)} files -> {short_name}.txt")
 

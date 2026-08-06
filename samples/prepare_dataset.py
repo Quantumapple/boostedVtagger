@@ -28,7 +28,8 @@ dataset_configs = [
 ]
 
 batch_number = args.batch
-redirector = "root://cmsdcadisk.fnal.gov/"
+FNAL_REDIRECTOR = "root://cmsdcadisk.fnal.gov/"
+GLOBAL_REDIRECTOR = "root://cms-xrd-global.cern.ch/"
 
 # CRITICAL: Never change this seed. It ensures the shuffle order remains identical across runs!
 random.seed(12345)
@@ -73,10 +74,7 @@ for filename in dataset_configs:
 
             clean_path = file_path
 
-            # If the line already carries its own redirector (e.g. QCD files
-            # from make_qcd_input.py, resolved to whichever site actually
-            # has them), keep it as-is -- forcing everything onto the FNAL
-            # redirector breaks reads for files that don't live at FNAL disk.
+            # If the line already carries its own redirector, keep it as-is.
             if clean_path.startswith("root://"):
                 f_out.write(f"{clean_path}\n")
                 continue
@@ -85,7 +83,15 @@ for filename in dataset_configs:
             if clean_path.startswith("store/"):
                 clean_path = "/" + clean_path
 
-            # Write with FNAL prefix (default for files with no redirector of their own)
+            # /dcache paths are FNAL's physical dCache namespace (only that
+            # site's door resolves them); plain /store LFNs go through the
+            # CMS global redirector so xrootd can find whichever site holds
+            # the file (e.g. QCD samples resolved to a non-FNAL site).
+            if clean_path.startswith("/dcache"):
+                redirector = FNAL_REDIRECTOR
+            else:
+                redirector = GLOBAL_REDIRECTOR
+
             f_out.write(f"{redirector}{clean_path}\n")
 
     print(f"Batch {batch_number} for {filename[:25]}... -> Kept indices [{start_idx}:{end_idx}] ({len(selected_files)} files)")
