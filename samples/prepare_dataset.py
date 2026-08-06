@@ -73,18 +73,19 @@ for filename in dataset_configs:
 
             clean_path = file_path
 
-            # Defensive cleaning step: Strip any existing redirectors to prevent double prefixing
+            # If the line already carries its own redirector (e.g. QCD files
+            # from make_qcd_input.py, resolved to whichever site actually
+            # has them), keep it as-is -- forcing everything onto the FNAL
+            # redirector breaks reads for files that don't live at FNAL disk.
             if clean_path.startswith("root://"):
-                if clean_path.startswith(redirector):
-                    clean_path = clean_path[len(redirector):]
-                elif "/store/" in clean_path:
-                    clean_path = "/store/" + clean_path.split("/store/")[-1]
+                f_out.write(f"{clean_path}\n")
+                continue
 
             # Enforce leading forward-slash format for XRootD appending
             if clean_path.startswith("store/"):
                 clean_path = "/" + clean_path
 
-            # Write with FNAL prefix
+            # Write with FNAL prefix (default for files with no redirector of their own)
             f_out.write(f"{redirector}{clean_path}\n")
 
     print(f"Batch {batch_number} for {filename[:25]}... -> Kept indices [{start_idx}:{end_idx}] ({len(selected_files)} files)")
