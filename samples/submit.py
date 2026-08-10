@@ -137,7 +137,8 @@ error                 = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(jobid).stderr
 log                   = {{ log_dir }}/{{ dataset }}.$(jobid).log
 MY.WantOS             = "el9"
 +JobFlavour           = "workday"
-
+{% if request_memory %}request_memory        = {{ request_memory }}
+{% endif %}
 queue jobid from (
 {% for j in jobids %}{{ j }}
 {% endfor %})
@@ -158,9 +159,20 @@ error                 = {{ log_dir }}/{{ dataset }}.$(ClusterId).$(ProcId).stder
 log                   = {{ log_dir }}/{{ dataset }}.$(ProcId).log
 MY.WantOS             = "el9"
 +JobFlavour           = "workday"
-
+{% if request_memory %}request_memory        = {{ request_memory }}
+{% endif %}
 Queue {{ total_jobs }}
 """
+
+# QCD jobs run single-threaded (see bash_template) but still sit right at the 2048 Mb
+# Docker default, so they additionally need a raised request_memory; W/Z jobs stay on
+# the site default by leaving request_memory unset (Jinja omits the line when None).
+QCD_REQUEST_MEMORY = 2560
+
+
+def request_memory_for(dataset):
+    return QCD_REQUEST_MEMORY if dataset.startswith("QCD") else None
+
 
 CLUSTER_ID_RE = re.compile(r"submitted to cluster (\d+)")
 SCHEDD_RE = re.compile(r"submit jobs to (\S+)")
@@ -335,6 +347,7 @@ def resubmit_timeouts(script_dir):
             'output_name': output_name,
             'input_list': state['input_list'],
             'jobids': [int(jobid) for jobid, _ in to_resubmit],
+            'request_memory': request_memory_for(dataset),
         })
         jdl_path = script_dir / f"resubmit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jdl"
         with open(jdl_path, 'w') as f:
@@ -402,6 +415,7 @@ if __name__ == "__main__":
         'batch': batch_number,
         'input_list': args.input_list,
         'total_jobs': total_jobs,
+        'request_memory': request_memory_for(dataset_prefix),
     })
     with open(batch_jdl_path, 'w') as f:
         f.write(batch_jdl_content)
