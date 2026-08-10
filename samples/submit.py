@@ -41,7 +41,15 @@ eval `scramv1 runtime -sh` # cmsenv is an alias not on the workers
 
 cd btvnano-prod
 
-echo "cmsRun MC_allPF_2024_NANO.py inputFiles=${INPUT_FILE} outputFile=${OUTPUT_FILE}"
+# QCD events are busier (more jets/PF candidates) and pushed the default 2-thread
+# config over the 2048 Mb Docker memory limit; run QCD single-threaded to lower
+# peak memory instead of raising request_memory for every sample.
+NUM_THREADS=2
+if [[ "${DATASET}" == QCD* ]]; then
+    NUM_THREADS=1
+fi
+
+echo "cmsRun MC_allPF_2024_NANO.py inputFiles=${INPUT_FILE} outputFile=${OUTPUT_FILE} numThreads=${NUM_THREADS}"
 
 # Retry cmsRun a few times: transient xrootd read failures against the input file
 # (e.g. dCache pool timeouts / "Operation expired") are common under load and usually
@@ -62,7 +70,7 @@ for ATTEMPT in $(seq 1 $MAX_CMSRUN_ATTEMPTS); do
         CMSRUN_INPUT=${GLOBAL_REDIRECTOR}${INPUT_FILE#$LOCAL_REDIRECTOR}
         echo "Retrying via global redirector: ${CMSRUN_INPUT}"
     fi
-    cmsRun MC_allPF_2024_NANO.py inputFiles=${CMSRUN_INPUT} outputFile=${OUTPUT_FILE}
+    cmsRun MC_allPF_2024_NANO.py inputFiles=${CMSRUN_INPUT} outputFile=${OUTPUT_FILE} numThreads=${NUM_THREADS}
     CMSRUN_EXIT=$?
     if [ $CMSRUN_EXIT -eq 0 ]; then
         break
