@@ -164,15 +164,16 @@ MY.WantOS             = "el9"
 Queue {{ total_jobs }}
 """
 
-# QCD jobs run single-threaded (see bash_template) but still occasionally spike past
-# a merely-modest request_memory (2560 wasn't enough for a few jobs), so they need a
-# raised request_memory; W/Z jobs stay on the site default by leaving request_memory
-# unset (Jinja omits the line when None).
-QCD_REQUEST_MEMORY = 3072
+# QCD jobs run single-threaded (see bash_template) but still need more than the site
+# default; a few jobs still spiked past 2560 on their first attempt, so resubmissions
+# ask for more headroom than the initial try. W/Z jobs stay on the site default by
+# leaving request_memory unset (Jinja omits the line when None).
+QCD_REQUEST_MEMORY = 2560
+QCD_RESUBMIT_REQUEST_MEMORY = 3072
 
 
-def request_memory_for(dataset):
-    return QCD_REQUEST_MEMORY if dataset.startswith("QCD") else None
+def request_memory_for(dataset, mb):
+    return mb if dataset.startswith("QCD") else None
 
 
 CLUSTER_ID_RE = re.compile(r"submitted to cluster (\d+)")
@@ -348,7 +349,7 @@ def resubmit_timeouts(script_dir):
             'output_name': output_name,
             'input_list': state['input_list'],
             'jobids': [int(jobid) for jobid, _ in to_resubmit],
-            'request_memory': request_memory_for(dataset),
+            'request_memory': request_memory_for(dataset, QCD_RESUBMIT_REQUEST_MEMORY),
         })
         jdl_path = script_dir / f"resubmit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jdl"
         with open(jdl_path, 'w') as f:
@@ -416,7 +417,7 @@ if __name__ == "__main__":
         'batch': batch_number,
         'input_list': args.input_list,
         'total_jobs': total_jobs,
-        'request_memory': request_memory_for(dataset_prefix),
+        'request_memory': request_memory_for(dataset_prefix, QCD_REQUEST_MEMORY),
     })
     with open(batch_jdl_path, 'w') as f:
         f.write(batch_jdl_content)
