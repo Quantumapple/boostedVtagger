@@ -164,10 +164,11 @@ MY.WantOS             = "el9"
 Queue {{ total_jobs }}
 """
 
-# QCD jobs run single-threaded (see bash_template) but still sit right at the 2048 Mb
-# Docker default, so they additionally need a raised request_memory; W/Z jobs stay on
-# the site default by leaving request_memory unset (Jinja omits the line when None).
-QCD_REQUEST_MEMORY = 2560
+# QCD jobs run single-threaded (see bash_template) but still occasionally spike past
+# a merely-modest request_memory (2560 wasn't enough for a few jobs), so they need a
+# raised request_memory; W/Z jobs stay on the site default by leaving request_memory
+# unset (Jinja omits the line when None).
+QCD_REQUEST_MEMORY = 3072
 
 
 def request_memory_for(dataset):
