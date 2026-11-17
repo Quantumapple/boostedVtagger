@@ -365,33 +365,26 @@ def resubmit_timeouts(script_dir):
           f"{n_done} previously confirmed done (skipped)")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Submit jobs to Condor')
+def submit_input_list(input_list, now, dryrun, max_retries):
+    """Submit one batch list file as its own Condor cluster.
 
-    parser.add_argument('--input_list', type=str, help='Path to the text file containing jobs mapping')
-    parser.add_argument('--dryrun', action='store_true')
-    parser.add_argument('--max_retries', type=int, default=3, help='Max resubmissions for a job that fails or times out')
-    parser.add_argument('--resubmit', type=str, metavar='SCRIPT_DIR',
-                         help='Instead of submitting a new batch, check retry_state.json in this '
-                              'job_submission_<timestamp> dir and resubmit any job that failed')
-    args = parser.parse_args()
-
-    if args.resubmit:
-        resubmit_timeouts(args.resubmit)
-        raise SystemExit(0)
-
-    if not args.input_list:
-        parser.error('--input_list is required unless --resubmit is given')
-
-    with open(args.input_list, 'r') as f:
+    Each list gets its own ProcId numbering (0..N-1 = line number in that list), its own
+    cluster, its own script/log dir and its own retry_state.json, so --resubmit works
+    per list exactly as it does for a single --input_list.
+    """
+    with open(input_list, 'r') as f:
         total_jobs = len(f.readlines())
 
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    dataset_prefix = re.sub(r"batch\d+_", "", args.input_list.split('_TuneCP5')[0])
-    batch_number = parse_batch_number(args.input_list)
+    dataset_prefix = re.sub(r"batch\d+_", "", input_list.split('_TuneCP5')[0])
+    batch_number = parse_batch_number(input_list)
 
     script_dir = Path('.') / 'condor_scripts' / f'{dataset_prefix}' / f'job_submission_{now}'
     log_dir = Path('.') / 'condor_logs' / f'{dataset_prefix}' / f'job_submission_{now}'
+    if script_dir.exists():
+        # Same dataset prefix submitted twice within the same second (e.g. two batches
+        # of one sample in one call): keep the directories separate.
+        script_dir = script_dir.with_name(f'{script_dir.name}_batch{batch_number}')
+        log_dir = log_dir.with_name(f'{log_dir.name}_batch{batch_number}')
 
     script_dir.mkdir(exist_ok=True, parents=True)
     log_dir.mkdir(exist_ok=True, parents=True)
@@ -409,37 +402,70 @@ if __name__ == "__main__":
         'log_dir': log_dir.as_posix(),
         'dataset': dataset_prefix,
         'batch': batch_number,
-        'input_list': args.input_list,
+        'input_list': input_list,
         'total_jobs': total_jobs,
         'request_memory': INITIAL_REQUEST_MEMORY,
     })
     with open(batch_jdl_path, 'w') as f:
         f.write(batch_jdl_content)
 
-    if args.dryrun:
-        print("\n--- [Dry Run Validation] ---")
+    if dryrun:
+        print(f"\n--- [Dry Run Validation] {input_list} ({total_jobs} jobs) ---")
         print(f"Bash Script Path: {bash_path.as_posix()}")
         print(f"Batch JDL Path: {batch_jdl_path.as_posix()}")
+        return
 
-    else:
-        cluster_id, schedd = submit_job(batch_jdl_path)
-        print(f"{total_jobs} jobs submitted to cluster {cluster_id} on {schedd}")
+    cluster_id, schedd = submit_job(batch_jdl_path)
+    print(f"{input_list}: {total_jobs} jobs submitted to cluster {cluster_id} on {schedd}")
 
-        jobs_state = {
-            str(jobid): {'cluster_id': cluster_id, 'proc_id': jobid, 'schedd': schedd, 'retries': 0}
-            for jobid in range(total_jobs)
-        }
+    jobs_state = {
+        str(jobid): {'cluster_id': cluster_id, 'proc_id': jobid, 'schedd': schedd, 'retries': 0}
+        for jobid in range(total_jobs)
+    }
 
-        state_path = script_dir / 'retry_state.json'
-        with open(state_path, 'w') as f:
-            json.dump({
-                'dataset': dataset_prefix,
-                'batch': batch_number,
-                'input_list': args.input_list,
-                'bash_path': bash_path.as_posix(),
-                'log_dir': log_dir.as_posix(),
-                'max_retries': args.max_retries,
-                'jobs': jobs_state,
-            }, f, indent=2)
-        print(f"\nRetry state written to {state_path.as_posix()}")
-        print(f"Run 'python submit.py --resubmit {script_dir.as_posix()}' later to resubmit any that failed.")
+    state_path = script_dir / 'retry_state.json'
+    with open(state_path, 'w') as f:
+        json.dump({
+            'dataset': dataset_prefix,
+            'batch': batch_number,
+            'input_list': input_list,
+            'bash_path': bash_path.as_posix(),
+            'log_dir': log_dir.as_posix(),
+            'max_retries': max_retries,
+            'jobs': jobs_state,
+        }, f, indent=2)
+    print(f"Retry state written to {state_path.as_posix()}")
+    print(f"Run 'python submit.py --resubmit {script_dir.as_posix()}' later to resubmit any that failed.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Submit jobs to Condor')
+
+    parser.add_argument('--input_list', type=str, nargs='+',
+                         help='One or more batchN_*.txt files (e.g. --input_list a.txt b.txt); '
+                              'each is submitted as its own Condor cluster')
+    parser.add_argument('--dryrun', action='store_true')
+    parser.add_argument('--max_retries', type=int, default=3, help='Max resubmissions for a job that fails or times out')
+    parser.add_argument('--resubmit', type=str, metavar='SCRIPT_DIR',
+                         help='Instead of submitting a new batch, check retry_state.json in this '
+                              'job_submission_<timestamp> dir and resubmit any job that failed')
+    args = parser.parse_args()
+
+    if args.resubmit:
+        resubmit_timeouts(args.resubmit)
+        raise SystemExit(0)
+
+    if not args.input_list:
+        parser.error('--input_list is required unless --resubmit is given')
+
+    # Drop repeated paths (keep order), then validate every list before submitting any,
+    # so a typo in the last file does not leave a half-submitted set.
+    input_lists = list(dict.fromkeys(args.input_list))
+    for input_list in input_lists:
+        if not Path(input_list).is_file():
+            parser.error(f'input list not found: {input_list}')
+        parse_batch_number(input_list)
+
+    now = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for input_list in input_lists:
+        submit_input_list(input_list, now, args.dryrun, args.max_retries)
