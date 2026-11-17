@@ -25,6 +25,20 @@ dataset_configs = [
     "QCD-4Jets_Bin-HT-1200to1500_TuneCP5_13p6TeV_madgraphMLM-pythia8.txt",
     "QCD-4Jets_Bin-HT-1500to2000_TuneCP5_13p6TeV_madgraphMLM-pythia8.txt",
     "QCD-4Jets_Bin-HT-2000_TuneCP5_13p6TeV_madgraphMLM-pythia8.txt",
+    # WH/ZH signal samples (test only). Appended at the END so the shared
+    # random.shuffle sequence of the samples above is unchanged.
+    "WplusH-Wto2Q-Hto2Wto4Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "WplusH-Wto2Q-Hto2WtoLNu2Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "WplusH_Wto2Q_Hto2Wto2L2Nu_M-125_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "WminusH-Wto2Q-Hto2Wto4Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "WminusH-Wto2Q-Hto2WtoLNu2Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "WminusH-Wto2Q-Hto2Wto2L2Nu_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "ZH-Zto2Q-Hto2Wto4Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "ZH-Zto2Q-Hto2WtoLNu2Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "ZH-Zto2Q-Hto2Wto2L2Nu_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "GluGluZH-Zto2Q-Hto2Wto4Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "GluGluZH-Zto2Q-Hto2WtoLNu2Q_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
+    "GluGluZH-Zto2Q-Hto2Wto2L2Nu_Par-M-125_TuneCP5_13p6TeV_powhegMINLO-jhugen-pythia8.txt",
 ]
 
 batch_number = args.batch
@@ -52,6 +66,9 @@ for filename in dataset_configs:
 
     if "QCD" in filename:
         chunk_size = 50
+    elif "WplusH" in filename or "WminusH" in filename or "ZH" in filename:
+        # WH/ZH are test-only and have far fewer files (161-362) than W/Z/QCD
+        chunk_size = 20
     else:
         chunk_size = 100
 
