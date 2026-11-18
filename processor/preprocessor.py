@@ -7,6 +7,7 @@ from coffea.processor import ProcessorABC
 from coffea.nanoevents.methods import candidate
 from coffea.analysis_tools import PackedSelection
 from .tagger_gen_matching import match_Wplus, match_Wminus, match_Z, match_QCD
+from .tagger_higgs_jet_removal import from_higgs_jet_mask
 from .tagger_input import get_pfcands_features, get_svs_features
 
 ### Warning ignorance
@@ -34,9 +35,11 @@ class PreProcessor(ProcessorABC):
             "fj_isWplus",
             "fj_isWplus_ud",
             "fj_isWplus_cs",
+            "fj_isWplus_other",
             "fj_isWminus",
             "fj_isWminus_ud",
             "fj_isWminus_cs",
+            "fj_isWminus_other",
             # Z boson (hadronic)
             "fj_isZ",
             "fj_isZ_bb",
@@ -142,6 +145,12 @@ class PreProcessor(ProcessorABC):
         dr_table = fatjets.metric_table(candidatelep_p4)
         is_clean = ak.all(dr_table > 0.8, axis=-1)
         total_mask = is_good & is_clean
+
+        #### WH/ZH only: drop jets originating from the Higgs (H->WW daughters would
+        #### otherwise pass the V gen matching), so the leading jet is the V jet.
+        #### "ZH" also covers GluGluZH. W/Z/QCD training samples are untouched.
+        if any(tag in dataset for tag in ("WplusH", "WminusH", "ZH")):
+            total_mask = total_mask & ~from_higgs_jet_mask(events.GenPart, fatjets)
 
         #### Use ak.mask to find the index relative to the ORIGINAL collection
         # ak.mask turns 'False' entries into 'None' but keeps the array length the same.
