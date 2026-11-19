@@ -31,6 +31,10 @@ def classify(dataset_dir):
     if dataset_dir.startswith("QCD"):
         sub = qcd_subcategory(dataset_dir)
         return ("QCD", sub) if sub else (None, None)
+    # WH/ZH signal samples (test only): WplusH, WminusH, ZH, GluGluZH.
+    # Own category so they are never mixed with the W/Z training samples.
+    if dataset_dir.startswith(("WplusH", "WminusH", "ZH", "GluGluZH")):
+        return "VH_signal", dataset_dir
     return None, None
 
 
@@ -41,7 +45,7 @@ def build_filelist(base_path, year):
     for dataset_dir in sorted(dataset_dirs):
         category, subkey = classify(dataset_dir)
         if category is None:
-            print(f"Skipping unrecognized directory '{dataset_dir}' (doesn't match Wto2Q/Zto2Q/QCD)")
+            print(f"Skipping unrecognized directory '{dataset_dir}' (doesn't match Wto2Q/Zto2Q/QCD/WplusH/WminusH/ZH/GluGluZH)")
             continue
 
         dataset_path = f"{base_path}/{dataset_dir}"
